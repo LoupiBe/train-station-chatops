@@ -5,7 +5,7 @@
 
 import { ChatManager } from "./chat.js";
 import { ScheduleViewController } from "./schedule-view.js";
-import { registerServiceWorker, initConnectivityListeners } from "./sw-register.js";
+import { registerServiceWorker, initConnectivityListeners, initInstallPrompt } from "./sw-register.js";
 
 document.addEventListener("DOMContentLoaded", () => {
   // 1. Initialize Schedule View Controller
@@ -45,6 +45,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 5. PWA Service Worker Registration
   registerServiceWorker();
+
+  // 6. PWA Install Prompt Bar
+  initInstallPrompt();
 });
 
 /**

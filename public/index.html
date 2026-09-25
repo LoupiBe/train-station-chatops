@@ -181,6 +181,22 @@
         </div>
       </form>
 
+      <!-- Bottom PWA Install Status Bar -->
+      <aside id="pwa-install-banner" class="pwa-install-banner" role="region" aria-label="Installation de l'application" hidden>
+        <div class="install-banner-inner">
+          <div class="install-banner-info">
+            <span class="install-banner-icon" aria-hidden="true">📲</span>
+            <span class="install-banner-text" id="install-banner-text">
+              Installer l'application sur cet appareil pour un accès rapide hors ligne.
+            </span>
+          </div>
+          <div class="install-banner-actions">
+            <button type="button" id="btn-pwa-install" class="btn-pwa-install" aria-label="Installer l'application">Installer</button>
+            <button type="button" id="btn-pwa-dismiss" class="btn-pwa-dismiss" aria-label="Masquer la suggestion d'installation" title="Masquer pendant 7 jours">✕</button>
+          </div>
+        </div>
+      </aside>
+
       <div class="app-footer-bar">
         <div class="footer-left">
           <span class="footer-version" id="footer-version">v0.1.0</span>

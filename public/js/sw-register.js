@@ -213,3 +213,149 @@ export function initConnectivityListeners(options = {}) {
 export function getConnectivityStatus() {
   return isOnline;
 }
+
+export const PWA_DISMISS_KEY = 'pwa_install_dismissed';
+export const PWA_DISMISS_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
+export const IOS_INSTALL_INSTRUCTIONS = "Pour installer l'app : touchez Partager ⎋ puis Sur l'écran d'accueil ➕";
+
+let deferredPrompt = null;
+
+/**
+ * Checks if the PWA is already running in standalone mode (already installed)
+ */
+export function isPwaInstalled() {
+  if (typeof window === 'undefined') return false;
+  const isStandalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+  const isNavigatorStandalone = typeof navigator !== 'undefined' && Boolean(navigator.standalone);
+  return Boolean(isStandalone || isNavigatorStandalone);
+}
+
+/**
+ * Checks if user recently dismissed the install banner within the last 7 days
+ */
+export function isInstallDismissed() {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    const raw = localStorage.getItem(PWA_DISMISS_KEY);
+    if (!raw) return false;
+    const dismissedAt = parseInt(raw, 10);
+    if (isNaN(dismissedAt)) return false;
+    return (Date.now() - dismissedAt) < PWA_DISMISS_DURATION_MS;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Persists the install dismissal timestamp in localStorage for 7 days
+ */
+export function dismissInstallPrompt() {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(PWA_DISMISS_KEY, Date.now().toString());
+  } catch {
+    // Gracefully handle storage errors
+  }
+}
+
+/**
+ * Detects if the current client is an iOS device (iPhone/iPad/iPod or iPad OS 13+)
+ */
+export function isIosDevice() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const isIos = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  return isIos;
+}
+
+/**
+ * Initializes PWA install banner listeners and state management
+ */
+export function initInstallPrompt(options = {}) {
+  if (typeof window === 'undefined') return;
+
+  const banner = document.getElementById('pwa-install-banner');
+  const bannerText = document.getElementById('install-banner-text');
+  const installBtn = document.getElementById('btn-pwa-install');
+  const dismissBtn = document.getElementById('btn-pwa-dismiss');
+
+  // If already installed or dismissed within 7 days, keep hidden
+  if (isPwaInstalled() || isInstallDismissed()) {
+    if (banner) {
+      banner.hidden = true;
+      banner.classList.remove('visible');
+    }
+    return;
+  }
+
+  const hideBanner = () => {
+    if (banner) {
+      banner.hidden = true;
+      banner.classList.remove('visible');
+    }
+  };
+
+  const showBanner = () => {
+    if (banner) {
+      banner.hidden = false;
+      banner.classList.add('visible');
+    }
+  };
+
+  // Dismiss button handler (7 days retention)
+  const handleDismiss = () => {
+    dismissInstallPrompt();
+    hideBanner();
+  };
+
+  if (dismissBtn) {
+    dismissBtn.onclick = handleDismiss;
+  }
+
+  // 1. Android / Chromium / Desktop: beforeinstallprompt event
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+
+    if (isPwaInstalled() || isInstallDismissed()) return;
+
+    showBanner();
+
+    if (installBtn) {
+      installBtn.style.display = '';
+      installBtn.textContent = 'Installer';
+      installBtn.onclick = async () => {
+        if (!deferredPrompt) return;
+        try {
+          await deferredPrompt.prompt();
+          const choice = await deferredPrompt.userChoice;
+          if (choice && choice.outcome === 'accepted') {
+            hideBanner();
+          }
+        } catch {
+          // Ignore prompt errors
+        } finally {
+          deferredPrompt = null;
+        }
+      };
+    }
+  });
+
+  // 2. Track when app is installed
+  window.addEventListener('appinstalled', () => {
+    deferredPrompt = null;
+    hideBanner();
+  });
+
+  // 3. iOS Safari: Tailored manual installation instructions
+  if (isIosDevice() && !isPwaInstalled() && !isInstallDismissed()) {
+    showBanner();
+    if (bannerText) {
+      bannerText.innerHTML = `Pour installer : touchez <strong>Partager</strong> <span aria-hidden="true">⎋</span> puis <strong>Sur l'écran d'accueil</strong> ➕`;
+    }
+    if (installBtn) {
+      installBtn.textContent = 'Compris';
+      installBtn.onclick = handleDismiss;
+    }
+  }
+}

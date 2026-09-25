@@ -200,6 +200,12 @@ runTest("Version string v0.1.0 explicitly displayed in footer", () => {
   );
 });
 
+runTest("Bottom PWA install status bar container exists in markup", () => {
+  assert.ok(/id=["']pwa-install-banner["']/i.test(indexHtml), "index.html must contain #pwa-install-banner element");
+  assert.ok(/id=["']btn-pwa-install["']/i.test(indexHtml), "index.html must contain #btn-pwa-install element");
+  assert.ok(/id=["']btn-pwa-dismiss["']/i.test(indexHtml), "index.html must contain #btn-pwa-dismiss element");
+});
+
 // ===========================================================================
 // [3/7] CSS Design System & Accessibility Validation (`public/css/app.css`)
 // ===========================================================================
@@ -246,6 +252,12 @@ runTest("Top amber warning banner styling defined", () => {
     /#d97706|#f59e0b|#fef3c7|var\(--color-amber/i.test(appCss),
     "Offline banner must apply amber warning styling"
   );
+});
+
+runTest("Bottom PWA install status bar and button styling defined", () => {
+  assert.ok(appCss.includes(".pwa-install-banner"), "app.css must style .pwa-install-banner");
+  assert.ok(appCss.includes(".btn-pwa-install"), "app.css must style .btn-pwa-install");
+  assert.ok(appCss.includes(".btn-pwa-dismiss"), "app.css must style .btn-pwa-dismiss");
 });
 
 runTest("Action confirmation card and button styles defined", () => {
@@ -547,6 +559,9 @@ class MockElement {
     event.target = this;
     const fns = this._listeners.get(event.type) || [];
     const results = [];
+    if (typeof this[`on${event.type}`] === "function") {
+      results.push(this[`on${event.type}`](event));
+    }
     fns.forEach(fn => results.push(fn(event)));
     return results;
   }
@@ -582,7 +597,11 @@ class MockElement {
     if (sel.startsWith("#")) return node.id === sel.slice(1);
     return node.tagName === sel.toUpperCase();
   }
+  get innerHTML() {
+    return this._rawHtml || this.textContent;
+  }
   set innerHTML(html) {
+    this._rawHtml = html;
     this.children = [];
     this._parseHtmlIntoChildren(html);
   }
@@ -657,6 +676,20 @@ globalThis.window = {
   }
 };
 
+const storageMap = new Map();
+globalThis.localStorage = {
+  getItem: (k) => storageMap.get(k) ?? null,
+  setItem: (k, v) => storageMap.set(k, String(v)),
+  removeItem: (k) => storageMap.delete(k),
+  clear: () => storageMap.clear()
+};
+
+let mockMatchMediaStandalone = false;
+globalThis.window.matchMedia = (query) => ({
+  matches: query.includes("display-mode: standalone") ? mockMatchMediaStandalone : false,
+  media: query
+});
+
 if (typeof navigator !== "undefined") {
   Object.defineProperty(globalThis.navigator, "onLine", { value: true, configurable: true, writable: true });
 } else {
@@ -666,7 +699,15 @@ if (typeof navigator !== "undefined") {
 // Import genuine production controllers and helpers
 import { ChatManager, ERROR_MESSAGES } from "../public/js/chat.js";
 import { ScheduleViewController } from "../public/js/schedule-view.js";
-import { initConnectivityListeners } from "../public/js/sw-register.js";
+import {
+  initConnectivityListeners,
+  initInstallPrompt,
+  isPwaInstalled,
+  isInstallDismissed,
+  dismissInstallPrompt,
+  isIosDevice,
+  PWA_DISMISS_KEY
+} from "../public/js/sw-register.js";
 
 // 1. Actual ChatManager: Action Card Rendering
 runTest("Action confirmation card renders summary, [Confirmer] and [Annuler] buttons via ChatManager", () => {
@@ -992,6 +1033,127 @@ runTest("Brussels clock generates valid 24-hour military time", () => {
 
   const timeStr = formatter.format(new Date());
   assert.match(timeStr, /^\d{2}:\d{2}:\d{2}$/, "Brussels time string must match HH:mm:ss 24h format");
+});
+
+// 12. PWA Install Detection: isPwaInstalled
+runTest("PWA install: isPwaInstalled detects standalone display mode", () => {
+  mockMatchMediaStandalone = false;
+  globalThis.navigator.standalone = false;
+  assert.equal(isPwaInstalled(), false, "Should return false when not standalone");
+
+  mockMatchMediaStandalone = true;
+  assert.equal(isPwaInstalled(), true, "Should return true when display-mode: standalone matches");
+
+  mockMatchMediaStandalone = false;
+  globalThis.navigator.standalone = true;
+  assert.equal(isPwaInstalled(), true, "Should return true when navigator.standalone is true");
+  globalThis.navigator.standalone = false;
+});
+
+// 13. PWA Install Dismissal: isInstallDismissed & dismissInstallPrompt
+runTest("PWA install: isInstallDismissed checks 7-day expiration in localStorage", () => {
+  localStorage.clear();
+  assert.equal(isInstallDismissed(), false, "Should be false when no dismiss recorded");
+
+  dismissInstallPrompt();
+  assert.equal(isInstallDismissed(), true, "Should be true immediately after dismissal");
+
+  // Expired timestamp (8 days ago)
+  const eightDaysAgo = Date.now() - (8 * 24 * 60 * 60 * 1000);
+  localStorage.setItem(PWA_DISMISS_KEY, eightDaysAgo.toString());
+  assert.equal(isInstallDismissed(), false, "Should be false when dismissal expired after 7 days");
+
+  localStorage.clear();
+});
+
+// 14. PWA Install Flow: beforeinstallprompt
+await runAsyncTest("PWA install: beforeinstallprompt reveals banner and triggers prompt on install click", async () => {
+  localStorage.clear();
+  mockMatchMediaStandalone = false;
+
+  const banner = getOrCreateMockElement("pwa-install-banner", "aside");
+  banner.hidden = true;
+  banner.classList.remove("visible");
+  const bannerText = getOrCreateMockElement("install-banner-text", "span");
+  const installBtn = getOrCreateMockElement("btn-pwa-install", "button");
+  const dismissBtn = getOrCreateMockElement("btn-pwa-dismiss", "button");
+
+  initInstallPrompt();
+
+  let promptCalled = false;
+  const mockBeforeInstallPromptEvent = {
+    type: "beforeinstallprompt",
+    preventDefault: () => {},
+    prompt: async () => { promptCalled = true; },
+    userChoice: Promise.resolve({ outcome: "accepted" })
+  };
+
+  // Dispatch beforeinstallprompt
+  window.dispatchEvent(mockBeforeInstallPromptEvent);
+
+  assert.equal(banner.hidden, false, "Banner should be un-hidden on beforeinstallprompt");
+  assert.equal(banner.classList.contains("visible"), true, "Banner should have .visible class");
+
+  // Click install button
+  await installBtn.click();
+  assert.equal(promptCalled, true, "Clicking install button must invoke prompt()");
+  assert.equal(banner.hidden, true, "Banner should hide after install accepted");
+});
+
+// 15. PWA Install Flow: dismiss button
+runTest("PWA install: dismiss button hides banner and persists 7-day dismissal in localStorage", () => {
+  localStorage.clear();
+  mockMatchMediaStandalone = false;
+
+  const banner = getOrCreateMockElement("pwa-install-banner", "aside");
+  banner.hidden = false;
+  banner.classList.add("visible");
+  const dismissBtn = getOrCreateMockElement("btn-pwa-dismiss", "button");
+
+  initInstallPrompt();
+
+  dismissBtn.click();
+
+  assert.equal(banner.hidden, true, "Dismiss click must hide banner");
+  assert.equal(banner.classList.contains("visible"), false, "Visible class must be removed");
+  assert.equal(isInstallDismissed(), true, "Dismissal must be persisted in localStorage");
+
+  localStorage.clear();
+});
+
+// 16. PWA Install Flow: iOS Safari instructions
+runTest("PWA install: iOS Safari renders tailored step-by-step instructions", () => {
+  localStorage.clear();
+  mockMatchMediaStandalone = false;
+
+  const banner = getOrCreateMockElement("pwa-install-banner", "aside");
+  banner.hidden = true;
+  banner.classList.remove("visible");
+  const bannerText = getOrCreateMockElement("install-banner-text", "span");
+  const installBtn = getOrCreateMockElement("btn-pwa-install", "button");
+
+  // Mock iOS user agent
+  const originalUA = navigator.userAgent;
+  Object.defineProperty(navigator, "userAgent", {
+    value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+    configurable: true
+  });
+
+  assert.equal(isIosDevice(), true, "Should identify iPhone as iOS device");
+
+  initInstallPrompt();
+
+  assert.equal(banner.hidden, false, "Banner should be displayed on iOS Safari");
+  assert.ok(bannerText.innerHTML.includes("Partager"), "Instructions must mention 'Partager'");
+  assert.ok(bannerText.innerHTML.includes("écran d'accueil"), "Instructions must mention 'Sur l'écran d'accueil'");
+  assert.equal(installBtn.textContent, "Compris", "Install button should display 'Compris' on iOS");
+
+  // Restore userAgent
+  Object.defineProperty(navigator, "userAgent", {
+    value: originalUA,
+    configurable: true
+  });
+  localStorage.clear();
 });
 
 // ===========================================================================
