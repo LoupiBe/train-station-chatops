@@ -1,13 +1,10 @@
 # Environment & Secret files (NEVER commit secrets to Git)
-.env
-.env.*
-.env.local
+.env*
 !.env.example
+.envrc*
 
 # Cloudflare Wrangler local environment variables & secrets
-.dev.vars
-.dev.vars.*
-.dev.vars.local
+.dev.vars*
 !.dev.vars.example
 
 # Node dependencies
