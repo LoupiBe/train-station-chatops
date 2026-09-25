@@ -1,0 +1,42 @@
+# Environment & Secret files (NEVER commit secrets to Git)
+.env
+.env.*
+.env.local
+!.env.example
+
+# Cloudflare Wrangler local environment variables & secrets
+.dev.vars
+.dev.vars.*
+.dev.vars.local
+!.dev.vars.example
+
+# Node dependencies
+node_modules/
+
+# Cloudflare Wrangler build, cache, and runtime state
+.wrangler/
+.mf/
+
+# Build artifacts & distribution
+dist/
+build/
+.cache/
+
+# Logs & debug outputs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Operating System files
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+
+# Editor & IDE directories (optional local developer state)
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
