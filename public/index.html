@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Gare de Genval — Kiosque ChatOps</title>
+  <meta name="description" content="Gestion conversationnelle des horaires et des congés du kiosque de la gare de Genval via Gemini.">
+  <meta name="theme-color" content="#1a365d">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <div id="app" class="app-root">
+
+    <!-- Top Offline Amber Warning Banner (Verbatim French R3) -->
+    <aside id="offline-banner" class="banner-offline" role="alert" aria-live="assertive" hidden>
+      <div class="banner-inner">
+        <span class="banner-icon" aria-hidden="true">📡</span>
+        <p class="banner-text" id="offline-banner-text">Oups, pas de connexion Internet ! 📡 Vérifiez votre réseau pour papoter avec le bot et mettre à jour les horaires.</p>
+      </div>
+    </aside>
+
+    <!-- App Header -->
+    <header class="app-header" role="banner">
+      <div class="header-main">
+        <div class="header-brand">
+          <span class="brand-logo" aria-hidden="true">🚆</span>
+          <div class="brand-text">
+            <h1 class="brand-title">Gare de Genval — Kiosque</h1>
+            <span class="brand-subtitle">Gestionnaire d'affichage & horaires</span>
+          </div>
+        </div>
+
+        <div class="header-controls">
+          <!-- Live Brussels Clock Display -->
+          <div class="clock-display" id="brussels-clock" title="Heure officielle de Bruxelles" aria-label="Heure officielle de Bruxelles">
+            <span class="clock-icon" aria-hidden="true">🕒</span>
+            <time id="brussels-clock-time">--:--:--</time>
+            <span class="clock-tz">Bruxelles</span>
+          </div>
+
+          <!-- Network Connection Status Pill -->
+          <div id="connection-pill" class="connection-pill pill-online online" role="status" aria-label="Statut du réseau">
+            <span class="pill-dot" aria-hidden="true"></span>
+            <span class="pill-label">En ligne</span>
+          </div>
+
+          <!-- Schedule Drawer Button -->
+          <button type="button" id="toggle-schedule-btn" class="btn-schedule-toggle" aria-expanded="false" aria-controls="schedule-drawer" aria-label="Consulter et filtrer les horaires de la gare">
+            <span class="toggle-icon" aria-hidden="true">📅</span>
+            <span class="toggle-text">Horaires</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Schedule Consultation Drawer (Queryable & Visible Offline) -->
+    <aside id="schedule-drawer" class="schedule-drawer" role="dialog" aria-modal="true" aria-label="Consultation des horaires de la gare" hidden>
+      <div class="drawer-header">
+        <div class="drawer-header-title">
+          <span class="drawer-header-icon" aria-hidden="true">📋</span>
+          <h2>Horaires & Calendrier</h2>
+        </div>
+        <button type="button" id="close-schedule-btn" class="btn-close-drawer" aria-label="Fermer le panneau des horaires">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+
+      <div class="drawer-toolbar">
+        <div class="search-box">
+          <span class="search-icon" aria-hidden="true">🔍</span>
+          <input type="search" id="schedule-search-input" class="search-input" placeholder="Filtrer (ex: lundi, mai, ascension)..." aria-label="Rechercher dans les horaires et fermetures">
+          <button type="button" id="clear-search-btn" class="btn-clear-search" aria-label="Effacer la recherche" hidden>&times;</button>
+        </div>
+        <button type="button" id="refresh-schedule-btn" class="btn-refresh" title="Actualiser depuis GitHub" aria-label="Actualiser les horaires">
+          <span class="refresh-icon" aria-hidden="true">🔄</span>
+          <span class="refresh-label">Actualiser</span>
+        </button>
+      </div>
+
+      <div class="drawer-body" id="drawer-body">
+        <div class="schedule-meta-bar" id="schedule-meta-bar">
+          <span id="schedule-sync-time" class="sync-time">Synchronisation en cours...</span>
+          <span id="schedule-cache-pill" class="badge-source">GitHub direct</span>
+        </div>
+
+        <!-- Weekly Schedule Section -->
+        <section class="drawer-section" aria-labelledby="section-weekly-title">
+          <h3 id="section-weekly-title" class="section-title">
+            <span class="section-icon" aria-hidden="true">🗓️</span> Horaires Habituels de la Semaine
+          </h3>
+          <div id="weekly-table-container" class="weekly-table-wrapper">
+            <table class="weekly-table">
+              <thead>
+                <tr>
+                  <th scope="col">Jour</th>
+                  <th scope="col">Allumage</th>
+                  <th scope="col">Extinction</th>
+                  <th scope="col">Statut</th>
+                </tr>
+              </thead>
+              <tbody id="weekly-table-body">
+                <tr class="table-loading-row"><td colspan="4">Chargement du planning hebdomadaire...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Scheduled Closures Section -->
+        <section class="drawer-section" aria-labelledby="section-holidays-title">
+          <div class="section-header-row">
+            <h3 id="section-holidays-title" class="section-title">
+              <span class="section-icon" aria-hidden="true">🏖️</span> Fermetures Exceptionnelles & Congés
+            </h3>
+            <span id="holidays-count-badge" class="count-badge">0</span>
+          </div>
+          <ul id="holidays-list" class="drawer-list holidays-list" aria-label="Liste des fermetures exceptionnelles">
+            <li class="empty-state">Chargement des fermetures...</li>
+          </ul>
+        </section>
+
+        <!-- Whitelisted Dates Section -->
+        <section class="drawer-section" aria-labelledby="section-whitelist-title">
+          <div class="section-header-row">
+            <h3 id="section-whitelist-title" class="section-title">
+              <span class="section-icon" aria-hidden="true">⭐</span> Ouvertures Exceptionnelles (Fériés)
+            </h3>
+            <span id="whitelist-count-badge" class="count-badge">0</span>
+          </div>
+          <ul id="whitelist-list" class="drawer-list whitelist-list" aria-label="Liste des ouvertures exceptionnelles">
+            <li class="empty-state">Chargement des ouvertures...</li>
+          </ul>
+        </section>
+      </div>
+    </aside>
+
+    <!-- Drawer Backdrop -->
+    <div id="drawer-backdrop" class="drawer-backdrop" aria-hidden="true" hidden></div>
+
+    <!-- Main Chat Area -->
+    <main class="chat-main" role="log" aria-live="polite">
+      <div id="chat-messages" class="chat-messages">
+        <!-- Initial Welcome Message Bubble -->
+        <div class="message-row message-bot">
+          <div class="message-avatar" aria-hidden="true">🤖</div>
+          <div class="message-bubble">
+            <div class="message-header">
+              <span class="message-sender">Assistant Kiosque</span>
+              <time class="message-time">En direct</time>
+            </div>
+            <div class="message-body">
+              <p>Bonjour ! Je suis l'assistant des horaires de la <strong>Gare de Genval</strong> 🚆.</p>
+              <p>Je peux vous aider à consulter les horaires, planifier des congés ou ajuster les heures d'ouverture. Que souhaitez-vous faire ?</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Input Area & Footer -->
+    <footer class="app-input-area" role="region" aria-label="Zone d'envoi de message">
+      <form id="chat-form" class="chat-form" autocomplete="off">
+        <div class="input-wrapper">
+          <input 
+            type="text" 
+            id="chat-input" 
+            class="chat-input" 
+            name="message" 
+            placeholder="Écrivez un message en français (ex: Fermer la gare du 14 au 17 mai)..." 
+            maxlength="500" 
+            required 
+            aria-label="Message à envoyer à l'assistant">
+          <button type="submit" id="chat-submit" class="btn-send" title="Envoyer le message" aria-label="Envoyer le message">
+            <span class="send-icon" aria-hidden="true">➤</span>
+          </button>
+        </div>
+        <div id="offline-input-hint" class="offline-input-hint" hidden>
+          <span>⚠️ Chat indisponible hors ligne. Vous pouvez toujours consulter les horaires ci-dessus.</span>
+        </div>
+      </form>
+
+      <div class="app-footer-bar">
+        <div class="footer-left">
+          <span class="footer-version" id="footer-version">v0.1.0</span>
+          <span class="footer-sep" aria-hidden="true">•</span>
+          <span class="footer-station">Gare de Genval (SNCB)</span>
+        </div>
+        <div class="footer-right">
+          <span class="footer-status" id="footer-status">Prêt</span>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Floating PWA Update Toast (Verbatim French R3) -->
+    <aside id="update-toast" class="update-toast" role="alert" aria-live="assertive" hidden>
+      <div class="toast-content">
+        <span class="toast-icon" aria-hidden="true">🚀</span>
+        <span class="toast-message" id="update-toast-text">Une nouvelle version toute fraîche est prête ! 🚀 Cliquez pour recharger.</span>
+      </div>
+      <button type="button" id="update-toast-btn" class="btn-toast-reload">Recharger</button>
+    </aside>
+
+  </div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

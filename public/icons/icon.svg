@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background Gradient (Belgian Rail Navy) -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a8a"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    
+    <!-- Accent Amber/Gold Gradient -->
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+
+    <!-- Train Body Gradient -->
+    <linearGradient id="trainGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e2e8f0"/>
+    </linearGradient>
+
+    <!-- Train Windshield Tint -->
+    <linearGradient id="windowGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+
+    <!-- Elevation Shadow Filter -->
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Background Base (Rounded Rect for App Icon / Maskable Safe Zone compliant) -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+
+  <!-- Station Canopy / Clock Arch (Top) -->
+  <path d="M 128 140 C 128 70 384 70 384 140 Z" fill="#2563eb" opacity="0.35"/>
+  <path d="M 112 144 L 400 144" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- Station Clock / Timetable Indicator (Centered at 12 o'clock) -->
+  <circle cx="256" cy="115" r="28" fill="#ffffff" stroke="#1e3a8a" stroke-width="4" filter="url(#shadow)"/>
+  <!-- Dial markers -->
+  <line x1="256" y1="92" x2="256" y2="98" stroke="#1e3a8a" stroke-width="3" stroke-linecap="round"/>
+  <line x1="256" y1="138" x2="256" y2="132" stroke="#1e3a8a" stroke-width="3" stroke-linecap="round"/>
+  <line x1="233" y1="115" x2="239" y2="115" stroke="#1e3a8a" stroke-width="3" stroke-linecap="round"/>
+  <line x1="279" y1="115" x2="273" y2="115" stroke="#1e3a8a" stroke-width="3" stroke-linecap="round"/>
+  <!-- Clock hands set to 06:50 (Genval Morning Kiosk Opening Time) -->
+  <line x1="256" y1="115" x2="246" y2="128" stroke="#1e3a8a" stroke-width="3" stroke-linecap="round"/>
+  <line x1="256" y1="115" x2="238" y2="105" stroke="#d97706" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="256" cy="115" r="2.5" fill="#d97706"/>
+
+  <!-- Railway Tracks (Perspective converging into station) -->
+  <g stroke="#64748b" stroke-width="5" stroke-linecap="round">
+    <line x1="160" y1="435" x2="352" y2="435"/>
+    <line x1="180" y1="410" x2="332" y2="410"/>
+    <line x1="195" y1="388" x2="317" y2="388"/>
+    <line x1="150" y1="450" x2="210" y2="370" stroke="#94a3b8" stroke-width="7"/>
+    <line x1="362" y1="450" x2="302" y2="370" stroke="#94a3b8" stroke-width="7"/>
+  </g>
+
+  <!-- Modern Locomotive Front Silhouette (Belgian Rail / Kiosk theme) -->
+  <g filter="url(#shadow)">
+    <!-- Main Train Body -->
+    <path d="M 168 200 
+             C 168 165 344 165 344 200 
+             L 348 335 
+             C 348 360 325 375 256 375 
+             C 187 375 164 360 164 335 
+             Z" 
+          fill="url(#trainGrad)" stroke="#cbd5e1" stroke-width="3"/>
+
+    <!-- Train Windshield -->
+    <path d="M 184 210 
+             C 184 185 328 185 328 210 
+             L 324 255 
+             C 324 265 300 270 256 270 
+             C 212 270 188 265 188 255 
+             Z" 
+          fill="url(#windowGrad)"/>
+
+    <!-- Windshield Reflection -->
+    <path d="M 194 212 C 220 196 290 196 318 212 L 312 225 C 285 212 225 212 200 225 Z" fill="#ffffff" opacity="0.45"/>
+
+    <!-- Front Belt / SNCB Rail Accent Stripes -->
+    <path d="M 166 295 L 346 295 L 347 312 L 165 312 Z" fill="#1e3a8a"/>
+    <path d="M 165 312 L 347 312 L 347 318 L 165 318 Z" fill="#f59e0b"/>
+
+    <!-- Twin Lower Headlights + Upper Center Light -->
+    <circle cx="196" cy="335" r="10" fill="#ffffff" stroke="#f59e0b" stroke-width="3"/>
+    <circle cx="316" cy="335" r="10" fill="#ffffff" stroke="#f59e0b" stroke-width="3"/>
+    <circle cx="256" cy="180" r="7" fill="#ffffff" stroke="#f59e0b" stroke-width="2"/>
+
+    <!-- Train Buffer / Fender -->
+    <rect x="206" y="360" width="100" height="12" rx="4" fill="#334155"/>
+  </g>
+
+  <!-- ChatOps AI Speech Bubble (Upper Right Badge) -->
+  <g filter="url(#shadow)">
+    <path d="M 330 90 
+             C 330 65 425 65 425 90 
+             C 425 105 405 118 385 120 
+             L 395 135 
+             L 375 122 
+             C 340 122 330 110 330 90 
+             Z" 
+          fill="url(#goldGrad)" stroke="#ffffff" stroke-width="3"/>
+    
+    <!-- AI Conversation Dots -->
+    <circle cx="360" cy="92" r="4.5" fill="#ffffff"/>
+    <circle cx="377" cy="92" r="4.5" fill="#ffffff"/>
+    <circle cx="394" cy="92" r="4.5" fill="#ffffff"/>
+  </g>
+</svg>
