@@ -283,7 +283,7 @@ export function parseGeminiResponse(apiResult) {
  * @returns {Promise<{ reply: string, proposedAction: object | null }>}
  */
 export async function queryGemini(env, { message, history = [], brusselsInfo, currentSchedule }) {
-  const { GEMINI_API_KEY, GEMINI_MODEL = "gemini-2.0-flash" } = env || {};
+  const { GEMINI_API_KEY, GEMINI_MODEL = "gemini-3.6-flash" } = env || {};
 
   if (!GEMINI_API_KEY) {
     const err = new Error("Clé d'API Gemini manquante (GEMINI_API_KEY requis)");
@@ -308,33 +308,64 @@ export async function queryGemini(env, { message, history = [], brusselsInfo, cu
     },
   };
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+  const requestedModel = env?.GEMINI_MODEL;
+  const primaryModel = (!requestedModel || requestedModel === "gemini-2.0-flash")
+    ? "gemini-flash-lite-latest"
+    : requestedModel;
+  const fallbackModel = primaryModel === "gemini-flash-lite-latest"
+    ? "gemini-3.6-flash"
+    : "gemini-flash-lite-latest";
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const executeCall = async (modelToUse, timeoutMs = 12000) => {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelToUse)}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
 
   let response;
   try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody),
-      signal: controller.signal,
-    });
-  } catch (err) {
-    clearTimeout(timeoutId);
-    if (err.name === "AbortError") {
-      const timeoutErr = new Error("Délai d'attente dépassé avec l'API Gemini");
-      timeoutErr.code = "GEMINI_TIMEOUT";
-      timeoutErr.status = 504;
-      throw timeoutErr;
+    response = await executeCall(primaryModel, 12000);
+    if (!response.ok && (response.status === 503 || response.status === 404 || response.status === 429) && primaryModel !== fallbackModel) {
+      console.warn(`[gemini] Modèle ${primaryModel} a renvoyé ${response.status}, bascule résiliente vers ${fallbackModel}`);
+      const fallbackResponse = await executeCall(fallbackModel, 12000);
+      if (fallbackResponse.ok) {
+        response = fallbackResponse;
+      }
     }
-    const netErr = new Error(`Erreur réseau Gemini : ${err.message}`);
-    netErr.code = "GEMINI_ERROR";
-    netErr.status = 502;
-    throw netErr;
-  } finally {
-    clearTimeout(timeoutId);
+  } catch (err) {
+    if (primaryModel !== fallbackModel) {
+      try {
+        console.warn(`[gemini] Erreur sur ${primaryModel} (${err.message}), bascule de secours vers ${fallbackModel}`);
+        const fallbackResponse = await executeCall(fallbackModel, 12000);
+        if (fallbackResponse.ok) {
+          response = fallbackResponse;
+        }
+      } catch {
+        // Ignorer l'erreur du fallback si l'on doit propager l'erreur principale
+      }
+    }
+    if (!response) {
+      if (err.name === "AbortError") {
+        const timeoutErr = new Error("Délai d'attente dépassé avec l'API Gemini");
+        timeoutErr.code = "GEMINI_TIMEOUT";
+        timeoutErr.status = 504;
+        throw timeoutErr;
+      }
+      const netErr = new Error(`Erreur réseau Gemini : ${err.message}`);
+      netErr.code = "GEMINI_ERROR";
+      netErr.status = 502;
+      throw netErr;
+    }
   }
 
   if (!response.ok) {

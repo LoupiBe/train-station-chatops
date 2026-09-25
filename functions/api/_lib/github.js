@@ -121,6 +121,26 @@ export async function fetchScheduleFromGitHub(env) {
 
   if (!response.ok) {
     if (response.status === 404) {
+      // Resilient fallback: if schedule.json is not yet initialized on GitHub, try schedule.default.json
+      const fallbackUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/schedule.default.json?ref=${encodeURIComponent(GITHUB_BRANCH)}`;
+      const fallbackRes = await fetch(fallbackUrl, {
+        method: "GET",
+        headers: getGitHubHeaders(GITHUB_TOKEN),
+      });
+
+      if (fallbackRes.ok) {
+        const fallbackData = await fallbackRes.json();
+        if (fallbackData.content) {
+          const rawContent = base64ToUtf8(fallbackData.content);
+          return {
+            schedule: JSON.parse(rawContent),
+            sha: "INITIAL_NEW_FILE",
+            raw: fallbackData,
+            isDefault: true,
+          };
+        }
+      }
+
       const err = new Error("Le fichier schedule.json est introuvable sur le dépôt GitHub.");
       err.status = 404;
       err.code = "NOT_FOUND";
@@ -194,9 +214,12 @@ export async function commitScheduleToGitHub(env, scheduleOrOptions, originalSha
   const body = {
     message,
     content: contentBase64,
-    sha,
     branch: GITHUB_BRANCH,
   };
+
+  if (sha && sha !== "INITIAL_NEW_FILE") {
+    body.sha = sha;
+  }
 
   const response = await fetch(url, {
     method: "PUT",
