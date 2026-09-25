@@ -33,8 +33,21 @@ export class ScheduleViewController {
 
     this.schedule = null;
     this.sha = null;
+    this.rawSearchQuery = "";
     this.searchQuery = "";
     this.isOpen = false;
+  }
+
+  /**
+   * Normalizes strings by removing diacritics and converting to lowercase.
+   * @param {string} str
+   * @returns {string}
+   */
+  normalize(str) {
+    return (str || "")
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toLowerCase();
   }
 
   init() {
@@ -61,9 +74,10 @@ export class ScheduleViewController {
     // 3. Search and filter listeners
     if (this.searchInput) {
       this.searchInput.addEventListener("input", (e) => {
-        this.searchQuery = (e.target.value || "").trim().toLowerCase();
+        this.rawSearchQuery = (e.target.value || "").trim();
+        this.searchQuery = this.normalize(this.rawSearchQuery);
         if (this.clearSearchBtn) {
-          this.clearSearchBtn.hidden = !this.searchQuery;
+          this.clearSearchBtn.hidden = !this.rawSearchQuery;
         }
         this.render();
       });
@@ -75,6 +89,7 @@ export class ScheduleViewController {
           this.searchInput.value = "";
           this.searchInput.focus();
         }
+        this.rawSearchQuery = "";
         this.searchQuery = "";
         this.clearSearchBtn.hidden = true;
         this.render();
@@ -187,10 +202,12 @@ export class ScheduleViewController {
       } else {
         // Fallback to cache if network returned error
         this.loadFromCache();
+        if (!this.schedule) this.render(true);
       }
     } catch {
       // Network failed: fallback to offline cache
       this.loadFromCache();
+      if (!this.schedule) this.render(true);
     } finally {
       if (this.refreshBtn) {
         this.refreshBtn.disabled = false;
@@ -201,12 +218,37 @@ export class ScheduleViewController {
   }
 
   render(isCached = false, brusselsTime = null) {
-    if (!this.schedule) return;
+    if (!this.schedule) {
+      this.renderMeta(isCached);
+      this.renderEmptyOfflineState();
+      return;
+    }
 
     this.renderMeta(isCached);
     this.renderWeeklyTable(brusselsTime);
     this.renderHolidays();
     this.renderWhitelist();
+  }
+
+  /**
+   * Renders explicit empty state when launched offline for the first time without cache.
+   */
+  renderEmptyOfflineState() {
+    if (typeof document === 'undefined') return;
+    const tbody = document.getElementById("weekly-table-body");
+    const holidaysList = document.getElementById("holidays-list");
+    const whitelistList = document.getElementById("whitelist-list");
+    const offlineMsg = "Aucun horaire en cache local. Connectez-vous à Internet pour synchroniser les horaires.";
+
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="4" class="empty-state">${offlineMsg}</td></tr>`;
+    }
+    if (holidaysList) {
+      holidaysList.innerHTML = `<li class="empty-state">${offlineMsg}</li>`;
+    }
+    if (whitelistList) {
+      whitelistList.innerHTML = `<li class="empty-state">${offlineMsg}</li>`;
+    }
   }
 
   renderMeta(isCached) {
@@ -258,13 +300,24 @@ export class ScheduleViewController {
       { key: "sunday", label: "Dimanche" },
     ];
 
-    // Determine current day of week in Brussels
+    const frenchToEnglishDays = {
+      lundi: "monday",
+      mardi: "tuesday",
+      mercredi: "wednesday",
+      jeudi: "thursday",
+      vendredi: "friday",
+      samedi: "saturday",
+      dimanche: "sunday",
+    };
+
+    // Determine current day of week in Brussels (maps French weekday or English fallback to key)
     let currentBrusselsDay = "";
     try {
-      currentBrusselsDay = (
+      const rawWeekday = (
         brusselsTime?.weekday ||
         new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Brussels", weekday: "long" }).format(new Date())
-      ).toLowerCase();
+      ).toLowerCase().trim();
+      currentBrusselsDay = frenchToEnglishDays[rawWeekday] || rawWeekday;
     } catch {
       currentBrusselsDay = "monday";
     }
@@ -276,13 +329,13 @@ export class ScheduleViewController {
     for (const d of days) {
       const dayData = this.schedule[d.key] || { on: "00:00", off: "00:00" };
       const isClosed = dayData.on === "00:00" && dayData.off === "00:00";
-      const isToday = d.key === currentBrusselsDay;
+      const isToday = d.key === currentBrusselsDay || d.label.toLowerCase() === (brusselsTime?.weekday || "").toLowerCase();
 
-      // Filter check
+      // Diacritic-insensitive filter check
       if (query) {
-        const matchName = d.label.toLowerCase().includes(query);
+        const matchName = this.normalize(d.label).includes(query);
         const matchHours = `${dayData.on} ${dayData.off}`.includes(query);
-        const matchStatus = (isClosed ? "fermé" : "ouvert").includes(query);
+        const matchStatus = this.normalize(isClosed ? "fermé" : "ouvert").includes(query);
         if (!matchName && !matchHours && !matchStatus) {
           continue;
         }
@@ -296,16 +349,17 @@ export class ScheduleViewController {
 
       html += `
         <tr class="${isToday ? "row-today" : ""}">
-          <td><strong>${d.label}</strong> ${todayBadge}</td>
-          <td><code>${dayData.on}</code></td>
-          <td><code>${dayData.off}</code></td>
+          <td><strong>${this.escapeHtml(d.label)}</strong> ${todayBadge}</td>
+          <td><code>${this.escapeHtml(dayData.on)}</code></td>
+          <td><code>${this.escapeHtml(dayData.off)}</code></td>
           <td>${statusBadge}</td>
         </tr>
       `;
     }
 
     if (visibleCount === 0) {
-      tbody.innerHTML = `<tr><td colspan="4" class="empty-state">Aucun jour ne correspond au filtre "${this.escapeHtml(query)}"</td></tr>`;
+      const displayQuery = this.rawSearchQuery || this.searchQuery;
+      tbody.innerHTML = `<tr><td colspan="4" class="empty-state">Aucun jour ne correspond au filtre "${this.escapeHtml(displayQuery)}"</td></tr>`;
     } else {
       tbody.innerHTML = html;
     }
@@ -317,12 +371,12 @@ export class ScheduleViewController {
     const countBadge = document.getElementById("holidays-count-badge");
     if (!listEl) return;
 
-    const holidays = Array.isArray(this.schedule.holidays) ? this.schedule.holidays : [];
+    const holidays = Array.isArray(this.schedule?.holidays) ? this.schedule.holidays : [];
     const query = this.searchQuery;
 
     const filtered = holidays.filter((h) => {
       if (!query) return true;
-      const str = `${h.start} ${h.end} ${h.description || ""}`.toLowerCase();
+      const str = this.normalize(`${h.start} ${h.end} ${h.description || ""}`);
       return str.includes(query);
     });
 
@@ -339,8 +393,8 @@ export class ScheduleViewController {
       .map((h) => {
         const isSingleDay = h.start === h.end;
         const dateDisplay = isSingleDay
-          ? `Le ${this.formatFrDate(h.start)}`
-          : `Du ${this.formatFrDate(h.start)} au ${this.formatFrDate(h.end)}`;
+          ? `Le ${this.escapeHtml(this.formatFrDate(h.start))}`
+          : `Du ${this.escapeHtml(this.formatFrDate(h.start))} au ${this.escapeHtml(this.formatFrDate(h.end))}`;
         const desc = h.description ? `<span class="item-desc">${this.escapeHtml(h.description)}</span>` : "";
 
         return `
@@ -362,14 +416,14 @@ export class ScheduleViewController {
     const countBadge = document.getElementById("whitelist-count-badge");
     if (!listEl) return;
 
-    const whitelist = Array.isArray(this.schedule.whitelist) ? this.schedule.whitelist : [];
+    const whitelist = Array.isArray(this.schedule?.whitelist) ? this.schedule.whitelist : [];
     const query = this.searchQuery;
 
     const filtered = whitelist.filter((item) => {
       const dateStr = typeof item === "string" ? item : (item.date || "");
       const reason = typeof item === "object" ? (item.reason || "") : "";
       if (!query) return true;
-      return `${dateStr} ${reason}`.toLowerCase().includes(query);
+      return this.normalize(`${dateStr} ${reason}`).includes(query);
     });
 
     if (countBadge) {
@@ -389,7 +443,7 @@ export class ScheduleViewController {
         return `
           <li class="drawer-list-item">
             <div class="item-date-row">
-              <span>Le ${this.formatFrDate(dateStr)}</span>
+              <span>Le ${this.escapeHtml(this.formatFrDate(dateStr))}</span>
               <span class="status-badge open">Ouvert</span>
             </div>
             ${reason}

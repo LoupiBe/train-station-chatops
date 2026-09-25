@@ -274,81 +274,7 @@ export class ChatManager {
     // Handle Confirm Click
     if (confirmBtn) {
       confirmBtn.addEventListener("click", async () => {
-        confirmBtn.disabled = true;
-        if (cancelBtn) cancelBtn.disabled = true;
-        const textSpan = confirmBtn.querySelector(".btn-text");
-        if (textSpan) textSpan.textContent = "Enregistrement sur GitHub...";
-
-        const targetSha = sha || (this.getScheduleSha ? this.getScheduleSha() : this.currentSha);
-
-        try {
-          const res = await fetch("/api/confirm", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: action.name,
-              payload: action.args,
-              sha: targetSha,
-            }),
-          });
-
-          const data = await res.json().catch(() => ({}));
-
-          if (res.ok && data.success) {
-            if (data.newFileSha) this.currentSha = data.newFileSha;
-            footer.innerHTML = `
-              <div class="action-status-badge badge-success">
-                <span>✅ Horaires mis à jour et enregistrés avec succès sur GitHub.</span>
-              </div>
-            `;
-            if (this.onScheduleUpdated) {
-              this.onScheduleUpdated();
-            }
-          } else {
-            // GitHub commit failure / Conflict (HTTP 409)
-            const errMsg = data.error || ERROR_MESSAGES.githubCommitFail;
-            footer.innerHTML = `
-              <div class="action-status-badge badge-error">
-                <span>${this.escapeHtml(errMsg)}</span>
-                <div style="margin-top: 6px; display: flex; gap: 8px;">
-                  <button type="button" class="btn-action-retry">Réessayer 🔄</button>
-                  <button type="button" class="btn-action-cancel btn-cancel">Fermer</button>
-                </div>
-              </div>
-            `;
-
-            const retryBtn = footer.querySelector(".btn-action-retry");
-            const closeBtn = footer.querySelector(".btn-action-cancel");
-
-            if (retryBtn) {
-              retryBtn.addEventListener("click", () => {
-                // Re-render footer buttons and trigger again
-                footer.innerHTML = `
-                  <button type="button" class="btn-action-confirm btn-confirm"><span class="btn-text">Confirmer</span></button>
-                  <button type="button" class="btn-action-cancel btn-cancel"><span class="btn-text">Annuler</span></button>
-                `;
-                const newConfirm = footer.querySelector(".btn-action-confirm");
-                if (newConfirm) newConfirm.click();
-              });
-            }
-
-            if (closeBtn) {
-              closeBtn.addEventListener("click", () => {
-                footer.innerHTML = `
-                  <div class="action-status-badge badge-canceled">
-                    <span>❌ Action non appliquée. Le planning reste inchangé.</span>
-                  </div>
-                `;
-              });
-            }
-          }
-        } catch {
-          footer.innerHTML = `
-            <div class="action-status-badge badge-error">
-              <span>${ERROR_MESSAGES.githubCommitFail}</span>
-            </div>
-          `;
-        }
+        await this.executeConfirm(card, action, sha, footer);
       });
     }
 
@@ -358,6 +284,108 @@ export class ChatManager {
         footer.innerHTML = `
           <div class="action-status-badge badge-canceled">
             <span>❌ Action annulée (planning inchangé).</span>
+          </div>
+        `;
+      });
+    }
+
+    return card;
+  }
+
+  /**
+   * Executes the confirmation request to /api/confirm and updates the action card footer.
+   * Reusable across initial confirm and subsequent retry clicks.
+   * @param {HTMLElement} card
+   * @param {object} action
+   * @param {string|null} sha
+   * @param {HTMLElement} footer
+   */
+  async executeConfirm(card, action, sha, footer) {
+    const confirmBtn = footer.querySelector(".btn-action-confirm");
+    const cancelBtn = footer.querySelector(".btn-action-cancel");
+    const retryBtn = footer.querySelector(".btn-action-retry");
+
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      const textSpan = confirmBtn.querySelector(".btn-text");
+      if (textSpan) textSpan.textContent = "Enregistrement sur GitHub...";
+    }
+    if (cancelBtn) {
+      cancelBtn.disabled = true;
+    }
+    if (retryBtn) {
+      retryBtn.disabled = true;
+      retryBtn.textContent = "Nouvelle tentative... ⏳";
+    }
+
+    const targetSha = (this.getScheduleSha ? this.getScheduleSha() : null) || this.currentSha || sha;
+
+    try {
+      const res = await fetch("/api/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: action.name,
+          payload: action.args,
+          sha: targetSha,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok && data.success) {
+        if (data.newFileSha) this.currentSha = data.newFileSha;
+        footer.innerHTML = `
+          <div class="action-status-badge badge-success">
+            <span>✅ Horaires mis à jour et enregistrés avec succès sur GitHub.</span>
+          </div>
+        `;
+        if (this.onScheduleUpdated) {
+          this.onScheduleUpdated();
+        }
+      } else {
+        // GitHub commit failure / Conflict (HTTP 409)
+        const errMsg = data.error || ERROR_MESSAGES.githubCommitFail;
+        this.renderConfirmError(card, action, sha, footer, errMsg);
+      }
+    } catch {
+      this.renderConfirmError(card, action, sha, footer, ERROR_MESSAGES.githubCommitFail);
+    }
+  }
+
+  /**
+   * Renders the error badge in the action card footer with operational [Réessayer 🔄] and [Fermer] buttons.
+   * @param {HTMLElement} card
+   * @param {object} action
+   * @param {string|null} sha
+   * @param {HTMLElement} footer
+   * @param {string} errMsg
+   */
+  renderConfirmError(card, action, sha, footer, errMsg) {
+    footer.innerHTML = `
+      <div class="action-status-badge badge-error">
+        <span>${this.escapeHtml(errMsg)}</span>
+        <div style="margin-top: 6px; display: flex; gap: 8px;">
+          <button type="button" class="btn-action-retry">Réessayer 🔄</button>
+          <button type="button" class="btn-action-cancel btn-cancel">Fermer</button>
+        </div>
+      </div>
+    `;
+
+    const retryBtn = footer.querySelector(".btn-action-retry");
+    const closeBtn = footer.querySelector(".btn-action-cancel");
+
+    if (retryBtn) {
+      retryBtn.addEventListener("click", async () => {
+        await this.executeConfirm(card, action, sha, footer);
+      });
+    }
+
+    if (closeBtn) {
+      closeBtn.addEventListener("click", () => {
+        footer.innerHTML = `
+          <div class="action-status-badge badge-canceled">
+            <span>❌ Action non appliquée. Le planning reste inchangé.</span>
           </div>
         `;
       });

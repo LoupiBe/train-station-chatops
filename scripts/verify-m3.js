@@ -504,6 +504,7 @@ class MockElement {
     this.disabled = false;
     this.hidden = false;
     this.value = "";
+    this.style = {};
     this._textContent = "";
     this._listeners = new Map();
   }
@@ -545,11 +546,12 @@ class MockElement {
   dispatchEvent(event) {
     event.target = this;
     const fns = this._listeners.get(event.type) || [];
-    fns.forEach(fn => fn(event));
-    return true;
+    const results = [];
+    fns.forEach(fn => results.push(fn(event)));
+    return results;
   }
   click() {
-    this.dispatchEvent({ type: "click", target: this });
+    return Promise.all(this.dispatchEvent({ type: "click", target: this }));
   }
   querySelector(sel) {
     return this._find(sel, false);
@@ -571,6 +573,11 @@ class MockElement {
     return all ? results : null;
   }
   _matches(node, sel) {
+    if (!sel || !node) return false;
+    if (sel.includes(".") && !sel.startsWith(".")) {
+      const [tag, className] = sel.split(".");
+      return node.tagName === tag.toUpperCase() && node.classList.contains(className);
+    }
     if (sel.startsWith(".")) return node.classList.contains(sel.slice(1));
     if (sel.startsWith("#")) return node.id === sel.slice(1);
     return node.tagName === sel.toUpperCase();
@@ -580,7 +587,6 @@ class MockElement {
     this._parseHtmlIntoChildren(html);
   }
   _parseHtmlIntoChildren(html) {
-    // Regex extracts top-level or nested elements
     const tagRegex = /<([a-zA-Z0-9-]+)([^>]*)>([\s\S]*?)<\/\1>|<([a-zA-Z0-9-]+)([^>]*)\/?>/g;
     let match;
     while ((match = tagRegex.exec(html)) !== null) {
@@ -589,22 +595,18 @@ class MockElement {
       const inner = match[3] || "";
       const el = new MockElement(tag);
 
-      // Extract class
       const classMatch = attrs.match(/class=["']([^"']+)["']/);
       if (classMatch) {
         classMatch[1].trim().split(/\s+/).forEach(c => el.classList.add(c));
       }
-      // Extract id
       const idMatch = attrs.match(/id=["']([^"']+)["']/);
       if (idMatch) {
         el.id = idMatch[1];
       }
-      // Extract type
       const typeMatch = attrs.match(/type=["']([^"']+)["']/);
       if (typeMatch) {
         el.setAttribute("type", typeMatch[1]);
       }
-      // Extract inner content
       if (inner.includes("<")) {
         el.innerHTML = inner;
       } else {
@@ -615,21 +617,67 @@ class MockElement {
   }
 }
 
-// 1. Action Card Rendering Simulation
-runTest("Action confirmation card renders summary, [Confirmer] and [Annuler] buttons", () => {
-  const card = new MockElement("div");
-  card.classList.add("action-card");
-  card.innerHTML = `
-    <div class="action-card-header"><span>Fermeture Exceptionnelle</span></div>
-    <div class="action-card-body">
-      <div class="action-card-summary">Fermeture du 14 au 17 mai 2026 (Pont de l'Ascension)</div>
-    </div>
-    <div class="action-card-footer">
-      <button type="button" class="btn-action-confirm"><span class="btn-text">Confirmer</span></button>
-      <button type="button" class="btn-action-cancel"><span class="btn-text">Annuler</span></button>
-    </div>
-  `;
+// Global DOM registry
+const elementRegistry = new Map();
+function getOrCreateMockElement(id, tag = "div") {
+  if (!elementRegistry.has(id)) {
+    const el = new MockElement(tag);
+    el.id = id;
+    elementRegistry.set(id, el);
+  }
+  return elementRegistry.get(id);
+}
 
+globalThis.document = {
+  createElement(tag) {
+    return new MockElement(tag);
+  },
+  getElementById(id) {
+    return elementRegistry.get(id) || null;
+  }
+};
+
+const windowListeners = new Map();
+globalThis.window = {
+  addEventListener(type, fn) {
+    if (!windowListeners.has(type)) windowListeners.set(type, []);
+    windowListeners.get(type).push(fn);
+  },
+  removeEventListener(type, fn) {
+    const arr = windowListeners.get(type);
+    if (arr) {
+      const idx = arr.indexOf(fn);
+      if (idx !== -1) arr.splice(idx, 1);
+    }
+  },
+  dispatchEvent(event) {
+    const fns = windowListeners.get(event.type) || [];
+    fns.forEach(fn => fn(event));
+    return true;
+  }
+};
+
+if (typeof navigator !== "undefined") {
+  Object.defineProperty(globalThis.navigator, "onLine", { value: true, configurable: true, writable: true });
+} else {
+  globalThis.navigator = { onLine: true };
+}
+
+// Import genuine production controllers and helpers
+import { ChatManager, ERROR_MESSAGES } from "../public/js/chat.js";
+import { ScheduleViewController } from "../public/js/schedule-view.js";
+import { initConnectivityListeners } from "../public/js/sw-register.js";
+
+// 1. Actual ChatManager: Action Card Rendering
+runTest("Action confirmation card renders summary, [Confirmer] and [Annuler] buttons via ChatManager", () => {
+  const chat = new ChatManager();
+  const card = chat.createActionCard({
+    name: "propose_holiday",
+    args: { start: "2026-05-14", end: "2026-05-17", description: "Pont de l'Ascension" },
+    summary: "Fermeture du 14 au 17 mai 2026 (Pont de l'Ascension)"
+  }, "sha-test-1234");
+
+  assert.ok(card, "ChatManager must return action card element");
   const confirmBtn = card.querySelector(".btn-action-confirm");
   const cancelBtn = card.querySelector(".btn-action-cancel");
   const summaryEl = card.querySelector(".action-card-summary");
@@ -641,185 +689,298 @@ runTest("Action confirmation card renders summary, [Confirmer] and [Annuler] but
   assert.equal(cancelBtn.textContent.trim(), "Annuler");
 });
 
-// 2. Confirmer Click State Locking Simulation
-await runAsyncTest("Clicking [Confirmer] locks buttons immediately and dispatches POST /api/confirm", async () => {
-  const card = new MockElement("div");
-  card.innerHTML = `
-    <div class="action-card-footer">
-      <button type="button" class="btn-action-confirm"><span class="btn-text">Confirmer</span></button>
-      <button type="button" class="btn-action-cancel"><span class="btn-text">Annuler</span></button>
-    </div>
-  `;
+// 2. Actual ChatManager: Confirmer Click State Locking
+await runAsyncTest("Clicking [Confirmer] locks buttons immediately and dispatches POST /api/confirm via ChatManager", async () => {
+  let apiCalled = false;
+  let sentBody = null;
+
+  globalThis.fetch = async (url, opts) => {
+    apiCalled = true;
+    sentBody = JSON.parse(opts.body);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, newFileSha: "sha-test-new" })
+    };
+  };
+
+  const chat = new ChatManager();
+  const card = chat.createActionCard({
+    name: "propose_holiday",
+    args: { start: "2026-05-14", end: "2026-05-17" },
+    summary: "Fermeture du 14 au 17 mai 2026"
+  }, "sha-test-1234");
 
   const confirmBtn = card.querySelector(".btn-action-confirm");
   const cancelBtn = card.querySelector(".btn-action-cancel");
-  let apiCalled = false;
-  let sentPayload = null;
 
-  // Mock confirm handler mimicking chat.js state machine
-  confirmBtn.addEventListener("click", async () => {
-    // 1. Immediate state locking
-    confirmBtn.disabled = true;
-    cancelBtn.disabled = true;
-
-    // 2. Simulated fetch
-    apiCalled = true;
-    sentPayload = {
-      action: "propose_holiday",
-      payload: { start: "2026-05-14", end: "2026-05-17" },
-      sha: "sha-test-1234"
-    };
-  });
-
-  confirmBtn.click();
+  await confirmBtn.click();
 
   assert.equal(confirmBtn.disabled, true, "Confirm button must be locked on click");
   assert.equal(cancelBtn.disabled, true, "Cancel button must be locked during submission");
   assert.equal(apiCalled, true, "API dispatch must be initiated");
-  assert.equal(sentPayload.sha, "sha-test-1234", "Must pass SHA for optimistic concurrency check");
+  assert.equal(sentBody.sha, "sha-test-1234", "Must pass SHA for optimistic concurrency check");
 });
 
-// 3. Confirmer HTTP 200 Success Flow
-runTest("Confirmer HTTP 200 response updates card to confirmed success badge", () => {
-  const card = new MockElement("div");
-  card.innerHTML = `
-    <div class="action-card-footer">
-      <button type="button" class="btn-action-confirm"><span class="btn-text">Confirmer</span></button>
-      <button type="button" class="btn-action-cancel"><span class="btn-text">Annuler</span></button>
-    </div>
-  `;
-  const footer = card.querySelector(".action-card-footer");
-
-  // Simulate success update
-  footer.innerHTML = `
-    <div class="action-status-badge badge-success">
-      <span>✅ Horaires mis à jour et enregistrés avec succès sur GitHub.</span>
-    </div>
-  `;
-
-  const badge = card.querySelector(".badge-success");
-  assert.ok(badge, "Card must render success badge on 200 OK");
-  assert.ok(badge.textContent.includes("succès"), "Badge must confirm successful commit");
-});
-
-// 4. Confirmer HTTP 409 Conflict Handling
-runTest("Confirmer HTTP 409 Conflict renders empathetic error message without crashing", () => {
-  const card = new MockElement("div");
-  card.innerHTML = `
-    <div class="action-card-footer">
-      <button type="button" class="btn-action-confirm"><span class="btn-text">Confirmer</span></button>
-      <button type="button" class="btn-action-cancel"><span class="btn-text">Annuler</span></button>
-    </div>
-  `;
-  const footer = card.querySelector(".action-card-footer");
-
-  // Simulate 409 Conflict response handling
-  const conflictMessage = "Petit accroc technique dans la salle des machines 🚂 Impossible d'enregistrer pour l'instant. Pas d'inquiétude, le planning actuel reste inchangé.";
-  footer.innerHTML = `
-    <div class="action-status-badge badge-error">
-      <span>${conflictMessage}</span>
-    </div>
-  `;
-
-  const errorBadge = card.querySelector(".badge-error");
-  assert.ok(errorBadge, "Card must render error badge on conflict");
-  assert.ok(errorBadge.textContent.includes("salle des machines 🚂"), "Error badge must display empathetic message");
-});
-
-// 5. Annuler Click Cancellation Simulation
-runTest("Clicking [Annuler] cancels proposal without issuing network call", () => {
-  const card = new MockElement("div");
-  card.innerHTML = `
-    <div class="action-card-footer">
-      <button type="button" class="btn-action-confirm"><span class="btn-text">Confirmer</span></button>
-      <button type="button" class="btn-action-cancel"><span class="btn-text">Annuler</span></button>
-    </div>
-  `;
-  const cancelBtn = card.querySelector(".btn-action-cancel");
-  const footer = card.querySelector(".action-card-footer");
-  let networkRequested = false;
-
-  cancelBtn.addEventListener("click", () => {
-    footer.innerHTML = `
-      <div class="action-status-badge badge-canceled">
-        <span>❌ Action annulée (planning inchangé).</span>
-      </div>
-    `;
+// 3. Actual ChatManager: Confirmer HTTP 200 Success Flow
+await runAsyncTest("Confirmer HTTP 200 response updates card to confirmed success badge via ChatManager", async () => {
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ success: true, newFileSha: "sha-success-200" })
   });
 
-  cancelBtn.click();
+  const chat = new ChatManager();
+  const card = chat.createActionCard({
+    name: "propose_whitelist",
+    args: { date: "2026-07-21", reason: "Fête Nationale" },
+    summary: "Ouverture exceptionnelle"
+  }, "sha-test-1234");
+
+  const confirmBtn = card.querySelector(".btn-action-confirm");
+  await confirmBtn.click();
+
+  const footer = card.querySelector(".action-card-footer");
+  const badge = footer.querySelector(".badge-success");
+  assert.ok(badge, "Card must render success badge on 200 OK");
+  assert.ok(badge.textContent.includes("succès"), "Badge must confirm successful commit");
+  assert.equal(chat.currentSha, "sha-success-200", "ChatManager must store updated file SHA");
+});
+
+// 4. Actual ChatManager: Confirmer HTTP 409 Conflict Handling & Retry Button
+await runAsyncTest("Confirmer HTTP 409 Conflict renders empathetic error and [Réessayer 🔄] button via ChatManager", async () => {
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 409,
+    json: async () => ({ error: "Conflict SHA", conflict: true })
+  });
+
+  const chat = new ChatManager();
+  const card = chat.createActionCard({
+    name: "propose_holiday",
+    args: { start: "2026-05-14", end: "2026-05-17" },
+    summary: "Fermeture"
+  }, "sha-stale");
+
+  const confirmBtn = card.querySelector(".btn-action-confirm");
+  await confirmBtn.click();
+
+  const footer = card.querySelector(".action-card-footer");
+  const errorBadge = footer.querySelector(".badge-error");
+  assert.ok(errorBadge, "Card must render error badge on conflict");
+  const retryBtn = footer.querySelector(".btn-action-retry");
+  assert.ok(retryBtn, "Card must render [Réessayer 🔄] button on conflict");
+});
+
+// 5. Actual ChatManager: Action Confirmation Retry Flow Dispatches Fresh Fetch
+await runAsyncTest("Clicking [Réessayer 🔄] re-executes confirmation request with latest SHA without dead buttons", async () => {
+  let fetchCount = 0;
+  let sentShas = [];
+
+  globalThis.fetch = async (url, opts) => {
+    fetchCount++;
+    const body = JSON.parse(opts.body);
+    sentShas.push(body.sha);
+    if (fetchCount === 1) {
+      return {
+        ok: false,
+        status: 409,
+        json: async () => ({ error: "Conflict SHA", conflict: true })
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, newFileSha: "sha-recovered-999" })
+    };
+  };
+
+  let scheduleSha = "sha-initial-111";
+  const chat = new ChatManager({
+    getScheduleSha: () => scheduleSha
+  });
+
+  const card = chat.createActionCard({
+    name: "propose_holiday",
+    args: { start: "2026-05-14", end: "2026-05-17" },
+    summary: "Fermeture"
+  }, "sha-initial-111");
+
+  const confirmBtn = card.querySelector(".btn-action-confirm");
+  await confirmBtn.click();
+
+  assert.equal(fetchCount, 1, "First fetch must be dispatched on confirm");
+
+  const footer = card.querySelector(".action-card-footer");
+  const retryBtn = footer.querySelector(".btn-action-retry");
+  assert.ok(retryBtn, "Retry button must exist after 409 failure");
+
+  // Simulate schedule refresh providing updated SHA
+  scheduleSha = "sha-refreshed-222";
+
+  // Trigger retry click
+  await retryBtn.click();
+
+  assert.equal(fetchCount, 2, "Second fetch must be dispatched when clicking [Réessayer 🔄]");
+  assert.equal(sentShas[1], "sha-refreshed-222", "Retry fetch must pass the latest refreshed SHA");
+
+  const successBadge = footer.querySelector(".badge-success");
+  assert.ok(successBadge, "Card must transition to success badge after successful retry");
+  assert.equal(chat.currentSha, "sha-recovered-999", "ChatManager must update SHA upon successful retry");
+});
+
+// 6. Actual ChatManager: Clicking [Annuler] & [Fermer] Flow
+await runAsyncTest("Clicking [Annuler] cancels proposal without issuing network call, and [Fermer] closes error card", async () => {
+  let networkRequested = false;
+  globalThis.fetch = async () => {
+    networkRequested = true;
+    return { ok: true, json: async () => ({}) };
+  };
+
+  const chat = new ChatManager();
+  const card = chat.createActionCard({
+    name: "propose_holiday",
+    args: { start: "2026-05-14", end: "2026-05-17" },
+    summary: "Fermeture"
+  }, "sha-test");
+
+  const cancelBtn = card.querySelector(".btn-action-cancel");
+  const footer = card.querySelector(".action-card-footer");
+
+  await cancelBtn.click();
 
   assert.equal(networkRequested, false, "No network request must occur on cancel");
-  const cancelBadge = card.querySelector(".badge-canceled");
+  const cancelBadge = footer.querySelector(".badge-canceled");
   assert.ok(cancelBadge, "Must render cancelled state badge");
   assert.ok(cancelBadge.textContent.includes("annulée"), "Badge text must indicate cancellation");
 });
 
-// 6. Online/Offline Network UI State Transitions
-runTest("Offline event toggles amber banner and disables chat input", () => {
-  const banner = new MockElement("aside");
-  banner.id = "offline-banner";
-  banner.hidden = true;
+// 7. Actual ScheduleViewController: French Weekday Highlighting
+runTest("ScheduleViewController highlights current day with row-today when given French weekday ('vendredi')", () => {
+  const tbodyEl = getOrCreateMockElement("weekly-table-body", "tbody");
+  tbodyEl.innerHTML = "";
 
-  const chatInput = new MockElement("input");
-  chatInput.id = "chat-input";
+  const ctrl = new ScheduleViewController();
+  ctrl.schedule = {
+    monday: { on: "06:50", off: "14:10" },
+    tuesday: { on: "06:50", off: "14:10" },
+    wednesday: { on: "06:50", off: "14:40" },
+    thursday: { on: "06:50", off: "14:10" },
+    friday: { on: "06:50", off: "14:10" },
+    saturday: { on: "00:00", off: "00:00" },
+    sunday: { on: "00:00", off: "00:00" },
+  };
+
+  ctrl.renderWeeklyTable({ weekday: "vendredi" });
+
+  const todayRow = tbodyEl.querySelector(".row-today");
+  assert.ok(todayRow, "Schedule table must highlight row matching French weekday 'vendredi'");
+  assert.ok(todayRow.textContent.includes("Vendredi"), "Highlighted row must be Vendredi");
+  assert.ok(todayRow.querySelector(".day-badge-today"), "Highlighted row must contain 'Aujourd'hui' badge");
+});
+
+// 8. Actual ScheduleViewController: Diacritic-Insensitive Search
+runTest("ScheduleViewController diacritic-insensitive search matches unaccented queries against accented text", () => {
+  const tbodyEl = getOrCreateMockElement("weekly-table-body", "tbody");
+  const holidaysListEl = getOrCreateMockElement("holidays-list", "ul");
+  const whitelistListEl = getOrCreateMockElement("whitelist-list", "ul");
+  getOrCreateMockElement("holidays-count-badge", "span");
+  getOrCreateMockElement("whitelist-count-badge", "span");
+
+  const ctrl = new ScheduleViewController();
+  ctrl.schedule = {
+    monday: { on: "06:50", off: "14:10" },
+    tuesday: { on: "06:50", off: "14:10" },
+    wednesday: { on: "06:50", off: "14:40" },
+    thursday: { on: "06:50", off: "14:10" },
+    friday: { on: "06:50", off: "14:10" },
+    saturday: { on: "00:00", off: "00:00" },
+    sunday: { on: "00:00", off: "00:00" },
+    holidays: [
+      { start: "2026-08-15", end: "2026-08-15", description: "Assomption (Août)" },
+      { start: "2026-12-25", end: "2026-12-25", description: "Noël" }
+    ],
+    whitelist: [
+      { date: "2026-07-21", reason: "Fête Nationale" }
+    ]
+  };
+
+  // 1. Search 'ferme' matches 'Fermé'
+  ctrl.searchQuery = ctrl.normalize("ferme");
+  ctrl.renderWeeklyTable({ weekday: "vendredi" });
+  assert.equal(tbodyEl.querySelectorAll("tr").length, 2, "Unaccented 'ferme' must match 2 closed days ('Fermé')");
+
+  // 2. Search 'aout' matches 'Août'
+  ctrl.searchQuery = ctrl.normalize("aout");
+  ctrl.renderHolidays();
+  assert.ok(holidaysListEl.textContent.includes("Août"), "Unaccented 'aout' must match holiday 'Assomption (Août)'");
+
+  // 3. Search 'noel' matches 'Noël'
+  ctrl.searchQuery = ctrl.normalize("noel");
+  ctrl.renderHolidays();
+  assert.ok(holidaysListEl.textContent.includes("Noël"), "Unaccented 'noel' must match holiday 'Noël'");
+
+  // 4. Search 'fete' matches 'Fête Nationale'
+  ctrl.searchQuery = ctrl.normalize("fete");
+  ctrl.renderWhitelist();
+  assert.ok(whitelistListEl.textContent.includes("Fête"), "Unaccented 'fete' must match whitelist 'Fête Nationale'");
+});
+
+// 9. Actual ScheduleViewController: First-Launch Offline Graceful Degradation
+runTest("ScheduleViewController gracefully displays explicit empty state when launched offline without cache", () => {
+  const tbodyEl = getOrCreateMockElement("weekly-table-body", "tbody");
+  const holidaysListEl = getOrCreateMockElement("holidays-list", "ul");
+  const whitelistListEl = getOrCreateMockElement("whitelist-list", "ul");
+
+  const ctrl = new ScheduleViewController();
+  ctrl.schedule = null;
+  ctrl.render(true, null);
+
+  assert.ok(
+    tbodyEl.textContent.includes("Aucun horaire en cache local"),
+    "Weekly table must display informative message when launched offline without cache"
+  );
+  assert.ok(
+    holidaysListEl.textContent.includes("Aucun horaire en cache local"),
+    "Holidays list must display informative message when launched offline without cache"
+  );
+});
+
+// 10. Actual sw-register: Online/Offline Network UI State Transitions
+runTest("Online/offline window events toggle amber banner and chat input state via initConnectivityListeners", () => {
+  const offlineBanner = getOrCreateMockElement("offline-banner", "aside");
+  offlineBanner.hidden = true;
+  const offlineBannerText = getOrCreateMockElement("offline-banner-text", "p");
+  const connectionPill = getOrCreateMockElement("connection-pill", "div");
+  const pillLabel = new MockElement("span");
+  pillLabel.classList.add("pill-label");
+  connectionPill.appendChild(pillLabel);
+  const chatInput = getOrCreateMockElement("chat-input", "input");
   chatInput.disabled = false;
-
-  const chatSubmit = new MockElement("button");
-  chatSubmit.id = "chat-submit";
+  const chatSubmit = getOrCreateMockElement("chat-submit", "button");
   chatSubmit.disabled = false;
 
-  // Simulate offline transition
-  banner.hidden = false;
-  banner.classList.add("visible");
-  chatInput.disabled = true;
-  chatSubmit.disabled = true;
+  initConnectivityListeners();
 
-  assert.equal(banner.hidden, false, "Amber banner must be un-hidden when offline");
-  assert.equal(banner.classList.contains("visible"), true, "Amber banner must have visible class");
+  // Dispatch offline event
+  window.dispatchEvent({ type: "offline" });
+
+  assert.equal(offlineBanner.hidden, false, "Amber banner must be un-hidden when offline");
+  assert.equal(offlineBanner.classList.contains("visible"), true, "Amber banner must have visible class");
   assert.equal(chatInput.disabled, true, "Chat input must be disabled when offline");
   assert.equal(chatSubmit.disabled, true, "Chat submit button must be disabled when offline");
+  assert.equal(pillLabel.textContent, "Hors ligne", "Pill label must indicate 'Hors ligne'");
 
-  // Simulate online reconnection
-  banner.hidden = true;
-  banner.classList.remove("visible");
-  chatInput.disabled = false;
-  chatSubmit.disabled = false;
+  // Dispatch online event
+  window.dispatchEvent({ type: "online" });
 
-  assert.equal(banner.hidden, true, "Amber banner must be hidden when back online");
+  assert.equal(offlineBanner.hidden, true, "Amber banner must be hidden when back online");
   assert.equal(chatInput.disabled, false, "Chat input must be re-enabled when back online");
   assert.equal(chatSubmit.disabled, false, "Chat submit button must be re-enabled when back online");
+  assert.equal(pillLabel.textContent, "En ligne", "Pill label must indicate 'En ligne'");
 });
 
-// 7. Schedule Drawer Search & Filter Simulation
-runTest("Schedule drawer filter correctly isolates matching days or holidays", () => {
-  const weeklyDays = [
-    { day: "Lundi", hours: "06:50 - 14:10" },
-    { day: "Mardi", hours: "06:50 - 14:10" },
-    { day: "Mercredi", hours: "06:50 - 14:40" },
-    { day: "Jeudi", hours: "06:50 - 14:10" },
-    { day: "Vendredi", hours: "06:50 - 14:10" },
-    { day: "Samedi", hours: "Fermé" },
-    { day: "Dimanche", hours: "Fermé" }
-  ];
-
-  function filterSchedule(query) {
-    const q = query.toLowerCase().trim();
-    return weeklyDays.filter(d => d.day.toLowerCase().includes(q) || d.hours.toLowerCase().includes(q));
-  }
-
-  const lundiResult = filterSchedule("lundi");
-  assert.equal(lundiResult.length, 1);
-  assert.equal(lundiResult[0].day, "Lundi");
-
-  const closedResult = filterSchedule("fermé");
-  assert.equal(closedResult.length, 2);
-
-  const emptyResult = filterSchedule("inconnu");
-  assert.equal(emptyResult.length, 0);
-});
-
-// 8. Brussels Official Clock Simulation
+// 11. Brussels Official Clock Simulation
 runTest("Brussels clock generates valid 24-hour military time", () => {
   const formatter = new Intl.DateTimeFormat("fr-BE", {
     timeZone: "Europe/Brussels",

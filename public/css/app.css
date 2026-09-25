@@ -381,8 +381,8 @@ html, body {
   font-size: 18px;
   color: var(--color-text-muted);
   cursor: pointer;
-  min-width: 32px;
-  min-height: 32px;
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .btn-refresh {
