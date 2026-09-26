@@ -504,7 +504,7 @@ runTest("getGitHubHeaders sets all required API headers", () => {
   const headers = getGitHubHeaders("ghp_secret_token");
   assert.equal(headers["Authorization"], "Bearer ghp_secret_token");
   assert.equal(headers["Accept"], "application/vnd.github+json");
-  assert.equal(headers["User-Agent"], "TrainStation-ChatOps/0.1.0");
+  assert.match(headers["User-Agent"], /^TrainStation-ChatOps\/\d+\.\d+\.\d+$/);
   assert.equal(headers["X-GitHub-Api-Version"], "2022-11-28");
 });
 

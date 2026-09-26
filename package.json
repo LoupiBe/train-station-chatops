@@ -1,6 +1,6 @@
 {
   "name": "train-station-chatops",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Standalone ChatOps PWA for train station timetable & holiday management via Cloudflare Pages and Gemini API",
   "type": "module",
@@ -10,7 +10,8 @@
     "test": "node --test",
     "test:unit": "node --test 'tests/unit/**/*.test.js'",
     "test:e2e": "node --test 'tests/e2e/**/*.test.js'",
-    "lint": "git ls-files -z '*.js' | xargs -0 -r -n 1 node --check"
+    "lint": "git ls-files -z '*.js' | xargs -0 -r -n 1 node --check",
+    "bump": "node scripts/bump-version.js"
   },
   "keywords": [
     "chatops",

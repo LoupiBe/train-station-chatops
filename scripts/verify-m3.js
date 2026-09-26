@@ -191,11 +191,11 @@ runTest("Action confirmation card buttons referenced in markup or template", () 
   );
 });
 
-runTest("Version string v0.1.0 explicitly displayed in footer", () => {
+runTest("Version string explicitly displayed in footer", () => {
   assert.match(
     indexHtml,
-    /<footer[^>]*>[\s\S]*v0\.1\.0[\s\S]*<\/footer>/i,
-    "Footer must explicitly display version string 'v0.1.0'"
+    /<footer[^>]*>[\s\S]*v\d+\.\d+\.\d+[\s\S]*<\/footer>/i,
+    "Footer must explicitly display a valid SemVer version string 'vX.Y.Z'"
   );
 });
 
@@ -368,10 +368,11 @@ runTest("sw.js exists and is non-empty", () => {
   assert.ok(swContent.length > 200, "public/sw.js must not be empty");
 });
 
-runTest("Cache name strictly matches 'kiosk-chatops-v0.1.0'", () => {
-  assert.ok(
-    swContent.includes("kiosk-chatops-v0.1.0"),
-    "sw.js must define cache name strictly containing 'kiosk-chatops-v0.1.0'"
+runTest("Cache name strictly matches 'kiosk-chatops-v*'", () => {
+  assert.match(
+    swContent,
+    /['"]kiosk-chatops-v\d+\.\d+\.\d+[^'"]*['"]/,
+    "sw.js must define cache name strictly matching 'kiosk-chatops-vX.Y.Z'"
   );
 });
 

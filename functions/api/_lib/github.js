@@ -44,7 +44,7 @@ export function getGitHubHeaders(token) {
   return {
     "Authorization": `Bearer ${token}`,
     "Accept": "application/vnd.github+json",
-    "User-Agent": "TrainStation-ChatOps/0.1.0",
+    "User-Agent": "TrainStation-ChatOps/0.1.1",
     "X-GitHub-Api-Version": "2022-11-28",
   };
 }

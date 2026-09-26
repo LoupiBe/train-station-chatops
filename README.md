@@ -1,4 +1,4 @@
-# 🚆 Train Station ChatOps — La Station Genval (v0.1.0)
+# 🚆 Train Station ChatOps — La Station Genval (v0.1.1)
 
 Application PWA (Progressive Web App) serverless hébergée sur **Cloudflare Pages**, sécurisée par **Cloudflare Zero Trust**, permettant au responsable de la gare de Genval de consulter et de modifier les horaires, vacances et fermetures exceptionnelles en langage naturel via l'API **Google Gemini**, avec synchronisation directe et sécurisée sur le dépôt GitHub du kiosque.
 
@@ -30,7 +30,7 @@ Application PWA (Progressive Web App) serverless hébergée sur **Cloudflare Pag
 * **Zéro port ouvert sur la gare :** Le Raspberry Pi reste hermétique derrière son pare-feu UFW sur le Wi-Fi public.
 * **100% Serverless & Gratuit :** Utilise exclusivement les paliers gratuits pérennes de Cloudflare Pages, Cloudflare Zero Trust (jusqu'à 50 utilisateurs), Google AI Studio (Gemini Flash) et GitHub API.
 * **Sécurité & Sas humain obligatoire :** L'IA ne modifie jamais directement les données. Elle propose une carte d'action claire `[Confirmer]` / `[Annuler]` que l'humain doit valider par un clic.
-* **PWA & Résilience Offline :** L'App Shell est pré-mis en cache (`kiosk-chatops-v0.1.0`). En cas de coupure réseau, une bannière ambre explicite s'affiche et le dernier planning reste consultable.
+* **PWA & Résilience Offline :** L'App Shell est pré-mis en cache (`kiosk-chatops-v0.1.1`). En cas de coupure réseau, une bannière ambre explicite s'affiche et le dernier planning reste consultable.
 * **Ton chaleureux & empathique :** Ambiance conviviale du café de la gare, gestion fine des congés belges et européens, et messages d'erreurs déculpabilisants (pause café du bot, accroc technique en salle des machines).
 
 ---
