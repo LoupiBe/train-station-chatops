@@ -228,6 +228,7 @@ export class ScheduleViewController {
     this.renderWeeklyTable(brusselsTime);
     this.renderHolidays();
     this.renderWhitelist();
+    this.renderSpecialSchedules();
   }
 
   /**
@@ -238,6 +239,7 @@ export class ScheduleViewController {
     const tbody = document.getElementById("weekly-table-body");
     const holidaysList = document.getElementById("holidays-list");
     const whitelistList = document.getElementById("whitelist-list");
+    const specialList = document.getElementById("special-schedules-list");
     const offlineMsg = "Aucun horaire en cache local. Connectez-vous à Internet pour synchroniser les horaires.";
 
     if (tbody) {
@@ -248,6 +250,9 @@ export class ScheduleViewController {
     }
     if (whitelistList) {
       whitelistList.innerHTML = `<li class="empty-state">${offlineMsg}</li>`;
+    }
+    if (specialList) {
+      specialList.innerHTML = `<li class="empty-state">${offlineMsg}</li>`;
     }
   }
 
@@ -447,6 +452,69 @@ export class ScheduleViewController {
               <span class="status-badge open">Ouvert</span>
             </div>
             ${reason}
+          </li>
+        `;
+      })
+      .join("");
+  }
+
+  renderSpecialSchedules() {
+    if (typeof document === 'undefined') return;
+    const listEl = document.getElementById("special-schedules-list");
+    const countBadge = document.getElementById("special-count-badge");
+    if (!listEl) return;
+
+    const specialList = Array.isArray(this.schedule?.special_schedules)
+      ? this.schedule.special_schedules
+      : (Array.isArray(this.schedule?.exceptional_schedules) ? this.schedule.exceptional_schedules : []);
+    const query = this.searchQuery;
+
+    const filtered = specialList.filter((item) => {
+      if (!query) return true;
+      const start = item.start || item.date || "";
+      const end = item.end || item.date || start;
+      const desc = item.description || item.reason || "";
+      const hours = `${item.on || ""} ${item.off || ""}`;
+      const str = this.normalize(`${start} ${end} ${hours} ${desc}`);
+      return str.includes(query);
+    });
+
+    if (countBadge) {
+      countBadge.textContent = specialList.length.toString();
+    }
+
+    if (filtered.length === 0) {
+      listEl.innerHTML = `<li class="empty-state">${query ? "Aucun horaire particulier correspondant" : "Aucun horaire particulier programmé"}</li>`;
+      return;
+    }
+
+    listEl.innerHTML = filtered
+      .map((item) => {
+        const start = item.start || item.date || "";
+        const end = item.end || item.date || start;
+        const isSingleDay = start === end;
+        const dateDisplay = isSingleDay
+          ? `Le ${this.escapeHtml(this.formatFrDate(start))}`
+          : `Du ${this.escapeHtml(this.formatFrDate(start))} au ${this.escapeHtml(this.formatFrDate(end))}`;
+        const isClosed = item.on === "00:00" && item.off === "00:00";
+        const statusBadge = isClosed
+          ? '<span class="status-badge closed">Fermé</span>'
+          : '<span class="status-badge open">Ouvert</span>';
+        const hoursDisplay = isClosed
+          ? "Fermé toute la journée"
+          : `${this.escapeHtml(item.on)} — ${this.escapeHtml(item.off)}`;
+        const desc = item.description ? `<span class="item-desc">${this.escapeHtml(item.description)}</span>` : "";
+
+        return `
+          <li class="drawer-list-item">
+            <div class="item-date-row">
+              <span>${dateDisplay}</span>
+              ${statusBadge}
+            </div>
+            <div class="item-hours-row" style="margin-top: 4px; font-size: 0.9em;">
+              <span>Horaires : <code>${hoursDisplay}</code></span>
+            </div>
+            ${desc}
           </li>
         `;
       })

@@ -87,6 +87,29 @@ export function generateCommitMessage(action, payload, authorEmail) {
       message = `Mise à jour des horaires : ${day} (${payload.on} - ${payload.off})`;
       break;
     }
+    case "propose_special_schedule":
+    case "propose_exceptional_schedule": {
+      const start = payload.start || payload.date;
+      const end = payload.end || payload.date || start;
+      const hours = payload.on === "00:00" && payload.off === "00:00" ? "fermé" : `${payload.on} - ${payload.off}`;
+      if (start === end) {
+        message = `Mise à jour des horaires : horaire exceptionnel le ${start} (${hours})${descSuffix}`;
+      } else {
+        message = `Mise à jour des horaires : horaire exceptionnel du ${start} au ${end} (${hours})${descSuffix}`;
+      }
+      break;
+    }
+    case "propose_remove_special_schedule":
+    case "propose_remove_exceptional_schedule": {
+      const start = payload.start || payload.date;
+      const end = payload.end || payload.date || start;
+      if (start === end) {
+        message = `Mise à jour des horaires : suppression horaire exceptionnel le ${start}`;
+      } else {
+        message = `Mise à jour des horaires : suppression horaire exceptionnel du ${start} au ${end}`;
+      }
+      break;
+    }
     default:
       message = `Mise à jour des horaires : ${action}`;
   }

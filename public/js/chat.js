@@ -400,6 +400,10 @@ export class ChatManager {
       case "propose_remove_holiday": return "Réouverture de la Gare";
       case "propose_whitelist": return "Ouverture Exceptionnelle (Férié)";
       case "propose_schedule_change": return "Modification des Horaires Habituels";
+      case "propose_special_schedule":
+      case "propose_exceptional_schedule": return "Horaire Particulier Exceptionnel";
+      case "propose_remove_special_schedule":
+      case "propose_remove_exceptional_schedule": return "Suppression d'Horaire Exceptionnel";
       default: return "Proposition d'Action";
     }
   }
@@ -432,6 +436,33 @@ export class ChatManager {
           <div class="detail-row"><span class="detail-label">Jour :</span><span class="detail-value">${this.escapeHtml(dayFr)} (${this.escapeHtml(args.day)})</span></div>
           <div class="detail-row"><span class="detail-label">Horaires :</span><span class="detail-value">${this.escapeHtml(args.on)} — ${this.escapeHtml(args.off)}</span></div>
         `;
+      }
+      case "propose_special_schedule":
+      case "propose_exceptional_schedule": {
+        const start = args.start || args.date || "";
+        const end = args.end || args.date || start;
+        const isSingleDay = start === end;
+        const desc = args.description ? `<div class="detail-row"><span class="detail-label">Motif :</span><span class="detail-value">${this.escapeHtml(args.description)}</span></div>` : "";
+        const dateHtml = isSingleDay
+          ? `<div class="detail-row"><span class="detail-label">Date :</span><span class="detail-value">${this.escapeHtml(start)}</span></div>`
+          : `<div class="detail-row"><span class="detail-label">Période :</span><span class="detail-value">Du ${this.escapeHtml(start)} au ${this.escapeHtml(end)}</span></div>`;
+        const hoursHtml = (args.on === "00:00" && args.off === "00:00")
+          ? `<div class="detail-row"><span class="detail-label">Horaires :</span><span class="detail-value"><em>Fermé toute la journée</em></span></div>`
+          : `<div class="detail-row"><span class="detail-label">Horaires :</span><span class="detail-value"><code>${this.escapeHtml(args.on)}</code> — <code>${this.escapeHtml(args.off)}</code></span></div>`;
+        return `
+          ${dateHtml}
+          ${hoursHtml}
+          ${desc}
+        `;
+      }
+      case "propose_remove_special_schedule":
+      case "propose_remove_exceptional_schedule": {
+        const start = args.start || args.date || "";
+        const end = args.end || args.date || start;
+        const isSingleDay = start === end;
+        return isSingleDay
+          ? `<div class="detail-row"><span class="detail-label">Date :</span><span class="detail-value">${this.escapeHtml(start)}</span></div>`
+          : `<div class="detail-row"><span class="detail-label">Période :</span><span class="detail-value">Du ${this.escapeHtml(start)} au ${this.escapeHtml(end)}</span></div>`;
       }
       default:
         return `<pre style="font-size: 11px;">${this.escapeHtml(JSON.stringify(args, null, 2))}</pre>`;

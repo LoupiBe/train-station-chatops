@@ -326,6 +326,40 @@ runTest("validateAction rejects propose_schedule_change with invalid time", () =
   assert.match(res.error, /invalide/i);
 });
 
+runTest("validateAction validates and rejects propose_special_schedule correctly", () => {
+  const valid = validateAction("propose_special_schedule", {
+    start: "2026-12-24",
+    end: "2026-12-24",
+    on: "08:00",
+    off: "12:00",
+    description: "Veille de Noël"
+  });
+  assert.equal(valid.valid, true);
+
+  const inverted = validateAction("propose_special_schedule", {
+    start: "2026-12-25",
+    end: "2026-12-24",
+    on: "08:00",
+    off: "12:00"
+  });
+  assert.equal(inverted.valid, false);
+  assert.match(inverted.error, /antérieure ou égale/i);
+
+  const badTime = validateAction("propose_special_schedule", {
+    start: "2026-12-24",
+    end: "2026-12-24",
+    on: "25:00",
+    off: "12:00"
+  });
+  assert.equal(badTime.valid, false);
+
+  const removeValid = validateAction("propose_remove_special_schedule", {
+    start: "2026-12-24",
+    end: "2026-12-24"
+  });
+  assert.equal(removeValid.valid, true);
+});
+
 runTest("applyScheduleAction maintains immutability and mutates correctly", () => {
   const base = {
     monday: { on: "06:50", off: "14:10" },
@@ -389,10 +423,35 @@ runTest("applyScheduleAction maintains immutability and mutates correctly", () =
   assert.deepEqual(step6.wednesday, { on: "07:00", off: "15:00" });
   assert.deepEqual(base.wednesday, { on: "06:50", off: "14:40" }, "Base must not be mutated");
 
+  // Add special schedule
+  const step6b = applyScheduleAction(step6, "propose_special_schedule", {
+    start: "2026-12-24",
+    end: "2026-12-24",
+    on: "08:00",
+    off: "12:00",
+    description: "Veille de Noël"
+  });
+  assert.equal(step6b.special_schedules.length, 1);
+  assert.deepEqual(step6b.special_schedules[0], {
+    start: "2026-12-24",
+    end: "2026-12-24",
+    on: "08:00",
+    off: "12:00",
+    description: "Veille de Noël"
+  });
+
+  // Remove special schedule
+  const step6c = applyScheduleAction(step6b, "propose_remove_special_schedule", {
+    start: "2026-12-24",
+    end: "2026-12-24"
+  });
+  assert.equal(step6c.special_schedules.length, 0);
+
   // Missing arrays initialized safely
   const step7 = applyScheduleAction({}, "propose_whitelist", { date: "2026-07-21" });
   assert.deepEqual(step7.whitelist, ["2026-07-21"]);
   assert.ok(Array.isArray(step7.holidays));
+  assert.ok(Array.isArray(step7.special_schedules));
 });
 
 runTest("validateScheduleStructure verifies full schema", () => {
@@ -482,6 +541,21 @@ runTest("generateCommitMessage produces informative French messages", () => {
   });
   assert.equal(m4, "Mise à jour des horaires : monday (06:50 - 14:10)");
 
+  const mSpecial = generateCommitMessage("propose_special_schedule", {
+    start: "2026-12-24",
+    end: "2026-12-24",
+    on: "08:00",
+    off: "12:00",
+    description: "Veille de Noël"
+  });
+  assert.equal(mSpecial, "Mise à jour des horaires : horaire exceptionnel le 2026-12-24 (08:00 - 12:00) (Veille de Noël)");
+
+  const mRemoveSpecial = generateCommitMessage("propose_remove_special_schedule", {
+    start: "2026-12-24",
+    end: "2026-12-24"
+  });
+  assert.equal(mRemoveSpecial, "Mise à jour des horaires : suppression horaire exceptionnel le 2026-12-24");
+
   const mAuthor = generateCommitMessage("propose_whitelist", { date: "2026-07-21" }, "user@example.com");
   assert.ok(mAuthor.includes("Demandé par : user@example.com"));
 });
@@ -526,17 +600,19 @@ runTest("formatDateFr and parseDateEuro format correctly", () => {
   assert.equal(parseDateEuro("14/05/2026"), "2026-05-14");
 });
 
-runTest("GEMINI_TOOLS declares exactly 4 functions with required properties", () => {
+runTest("GEMINI_TOOLS declares exactly 6 functions with required properties", () => {
   assert.equal(GEMINI_TOOLS.length, 1);
   const decls = GEMINI_TOOLS[0].functionDeclarations;
-  assert.equal(decls.length, 4);
+  assert.equal(decls.length, 6);
 
   const names = decls.map(d => d.name).sort();
   assert.deepEqual(names, [
     "propose_holiday",
     "propose_remove_holiday",
     "propose_schedule_change",
-    "propose_whitelist"
+    "propose_whitelist",
+    "propose_special_schedule",
+    "propose_remove_special_schedule"
   ].sort());
 
   const holiday = decls.find(d => d.name === "propose_holiday");
@@ -545,6 +621,12 @@ runTest("GEMINI_TOOLS declares exactly 4 functions with required properties", ()
   const change = decls.find(d => d.name === "propose_schedule_change");
   assert.deepEqual(change.parameters.required, ["day", "on", "off"]);
   assert.equal(change.parameters.properties.day.enum.length, 7);
+
+  const special = decls.find(d => d.name === "propose_special_schedule");
+  assert.deepEqual(special.parameters.required, ["start", "end", "on", "off"]);
+
+  const removeSpecial = decls.find(d => d.name === "propose_remove_special_schedule");
+  assert.deepEqual(removeSpecial.parameters.required, ["start", "end"]);
 });
 
 runTest("buildSystemInstruction includes Brussels context and current schedule", () => {
@@ -610,7 +692,7 @@ runTest("parseGeminiResponse parses text-only and functionCall responses", () =>
   assert.match(r3.proposedAction.summary, /Ouverture exceptionnelle le 21\/07\/2026/);
 });
 
-runTest("formatActionSummary formats summaries for all 4 tools", () => {
+runTest("formatActionSummary formats summaries for all 6 tools", () => {
   assert.match(
     formatActionSummary("propose_holiday", { start: "2026-05-14", end: "2026-05-17", description: "Ascension" }),
     /Fermeture du 14\/05\/2026 au 17\/05\/2026/
@@ -626,6 +708,14 @@ runTest("formatActionSummary formats summaries for all 4 tools", () => {
   assert.match(
     formatActionSummary("propose_remove_holiday", { start: "2026-05-14", end: "2026-05-17" }),
     /Suppression de la fermeture du 14\/05\/2026 au 17\/05\/2026/
+  );
+  assert.match(
+    formatActionSummary("propose_special_schedule", { start: "2026-12-24", end: "2026-12-24", on: "08:00", off: "12:00", description: "Veille de Noël" }),
+    /Horaire exceptionnel le 24\/12\/2026 : 08:00 - 12:00 \(Veille de Noël\)/
+  );
+  assert.match(
+    formatActionSummary("propose_remove_special_schedule", { start: "2026-12-24", end: "2026-12-24" }),
+    /Suppression de l'horaire exceptionnel le 24\/12\/2026/
   );
 });
 

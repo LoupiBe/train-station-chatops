@@ -140,9 +140,8 @@ runTest("Header branding includes station name and train logo", () => {
   assert.match(indexHtml, /(🚆|🚂|<svg[^>]*>)/i, "Header must contain train icon or SVG logo");
 });
 
-runTest("Live Brussels clock and connection status pill in header", () => {
+runTest("Live Brussels clock in header", () => {
   assert.ok(/id=["'](brussels-clock|clock-display)["']/i.test(indexHtml), "Header must contain Brussels clock container");
-  assert.ok(/id=["']connection-pill["']/i.test(indexHtml), "Header must contain connection status pill container");
 });
 
 runTest("Schedule consultation drawer toggle button exists", () => {

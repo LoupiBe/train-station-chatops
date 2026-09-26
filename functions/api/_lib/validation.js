@@ -110,6 +110,63 @@ export function validateAction(action, payload) {
       return { valid: true };
     }
 
+    case "propose_special_schedule":
+    case "propose_exceptional_schedule": {
+      const start = payload.start || payload.date;
+      const end = payload.end || payload.date || start;
+      const { on, off } = payload;
+      if (!start || typeof start !== "string") {
+        return { valid: false, error: "La date de début (start) est obligatoire" };
+      }
+      if (!isValidDate(start)) {
+        return { valid: false, error: `La date de début (${start}) est invalide dans le calendrier (format attendu: YYYY-MM-DD)` };
+      }
+      if (!end || typeof end !== "string") {
+        return { valid: false, error: "La date de fin (end) est obligatoire" };
+      }
+      if (!isValidDate(end)) {
+        return { valid: false, error: `La date de fin (${end}) est invalide dans le calendrier (format attendu: YYYY-MM-DD)` };
+      }
+      if (start > end) {
+        return {
+          valid: false,
+          error: `La date de début (${start}) doit être antérieure ou égale à la date de fin (${end})`,
+        };
+      }
+      if (!on || typeof on !== "string" || !isValidTime(on)) {
+        return { valid: false, error: `Heure d'ouverture invalide (${on}) : doit être au format 24h (HH:mm, 00:00 à 23:59)` };
+      }
+      if (!off || typeof off !== "string" || !isValidTime(off)) {
+        return { valid: false, error: `Heure de fermeture invalide (${off}) : doit être au format 24h (HH:mm, 00:00 à 23:59)` };
+      }
+      return { valid: true };
+    }
+
+    case "propose_remove_special_schedule":
+    case "propose_remove_exceptional_schedule": {
+      const start = payload.start || payload.date;
+      const end = payload.end || payload.date || start;
+      if (!start || typeof start !== "string") {
+        return { valid: false, error: "La date de début (start) est obligatoire" };
+      }
+      if (!isValidDate(start)) {
+        return { valid: false, error: `La date de début (${start}) est invalide dans le calendrier (format attendu: YYYY-MM-DD)` };
+      }
+      if (!end || typeof end !== "string") {
+        return { valid: false, error: "La date de fin (end) est obligatoire" };
+      }
+      if (!isValidDate(end)) {
+        return { valid: false, error: `La date de fin (${end}) est invalide dans le calendrier (format attendu: YYYY-MM-DD)` };
+      }
+      if (start > end) {
+        return {
+          valid: false,
+          error: `La date de début (${start}) doit être antérieure ou égale à la date de fin (${end})`,
+        };
+      }
+      return { valid: true };
+    }
+
     default:
       return { valid: false, error: `Action non reconnue : ${action}` };
   }
@@ -128,6 +185,9 @@ export function applyScheduleAction(currentSchedule, action, payload) {
 
   if (!Array.isArray(updated.holidays)) updated.holidays = [];
   if (!Array.isArray(updated.whitelist)) updated.whitelist = [];
+  if (!Array.isArray(updated.special_schedules)) {
+    updated.special_schedules = Array.isArray(updated.exceptional_schedules) ? updated.exceptional_schedules : [];
+  }
 
   switch (action) {
     case "propose_holiday": {
@@ -185,6 +245,44 @@ export function applyScheduleAction(currentSchedule, action, payload) {
       }
       break;
     }
+
+    case "propose_special_schedule":
+    case "propose_exceptional_schedule": {
+      const start = payload.start || payload.date;
+      const end = payload.end || payload.date || start;
+      const { on, off, description, reason } = payload || {};
+      const desc = description || reason;
+      const item = { start, end, on, off };
+      if (desc && typeof desc === "string" && desc.trim()) {
+        item.description = desc.trim();
+      }
+
+      updated.special_schedules = updated.special_schedules.filter(s => {
+        const sStart = s.start || s.date;
+        const sEnd = s.end || s.date || sStart;
+        return !(sStart === start && sEnd === end);
+      });
+
+      updated.special_schedules.push(item);
+      updated.special_schedules.sort((a, b) => {
+        const dateA = a.start || a.date;
+        const dateB = b.start || b.date;
+        return dateA.localeCompare(dateB);
+      });
+      break;
+    }
+
+    case "propose_remove_special_schedule":
+    case "propose_remove_exceptional_schedule": {
+      const start = payload.start || payload.date;
+      const end = payload.end || payload.date || start;
+      updated.special_schedules = updated.special_schedules.filter(s => {
+        const sStart = s.start || s.date;
+        const sEnd = s.end || s.date || sStart;
+        return !(sStart >= start && sEnd <= end);
+      });
+      break;
+    }
   }
 
   return updated;
@@ -233,6 +331,26 @@ export function validateScheduleStructure(schedule) {
   for (const d of schedule.whitelist) {
     if (!isValidDate(d)) {
       return { valid: false, error: `Date whitelist invalide : ${d}` };
+    }
+  }
+
+  const specialList = schedule.special_schedules || schedule.exceptional_schedules;
+  if (specialList !== undefined) {
+    if (!Array.isArray(specialList)) {
+      return { valid: false, error: "La propriété special_schedules doit être un tableau" };
+    }
+    for (const item of specialList) {
+      if (!item || typeof item !== "object") {
+        return { valid: false, error: "Élément d'horaire particulier invalide" };
+      }
+      const start = item.start || item.date;
+      const end = item.end || item.date || start;
+      if (!isValidDate(start) || !isValidDate(end) || start > end) {
+        return { valid: false, error: `Dates invalides pour horaire particulier : ${JSON.stringify(item)}` };
+      }
+      if (!isValidTime(item.on) || !isValidTime(item.off)) {
+        return { valid: false, error: `Horaires invalides pour horaire particulier : on=${item.on}, off=${item.off}` };
+      }
     }
   }
 

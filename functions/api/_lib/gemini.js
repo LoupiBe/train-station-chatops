@@ -92,6 +92,54 @@ export const GEMINI_TOOLS = [
           required: ["day", "on", "off"],
         },
       },
+      {
+        name: "propose_special_schedule",
+        description: "Proposer un horaire particulier pour une date ou une période exceptionnelle (ex: marché de Noël, événement, dimanche exceptionnellement ouvert, ou fermeture partielle). Remplace les horaires habituels et les fermetures pour la/les date(s) indiquée(s). Pour un seul jour, start et end sont identiques.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            start: {
+              type: "STRING",
+              description: "Date de début au format YYYY-MM-DD",
+            },
+            end: {
+              type: "STRING",
+              description: "Date de fin au format YYYY-MM-DD (identique à start si un seul jour)",
+            },
+            on: {
+              type: "STRING",
+              description: "Heure d'allumage/ouverture au format 24h HH:mm (ex: 08:00). Mettre 00:00 si fermé toute la journée.",
+            },
+            off: {
+              type: "STRING",
+              description: "Heure d'extinction/fermeture au format 24h HH:mm (ex: 12:00). Mettre 00:00 si fermé toute la journée.",
+            },
+            description: {
+              type: "STRING",
+              description: "Motif ou désignation optionnel en français (ex: Marché de Noël, Brocante, Travaux exceptionnels)",
+            },
+          },
+          required: ["start", "end", "on", "off"],
+        },
+      },
+      {
+        name: "propose_remove_special_schedule",
+        description: "Proposer la suppression d'un horaire particulier existant pour une date ou une période exceptionnelle.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            start: {
+              type: "STRING",
+              description: "Date de début de l'horaire particulier à retirer au format YYYY-MM-DD",
+            },
+            end: {
+              type: "STRING",
+              description: "Date de fin de l'horaire particulier à retirer au format YYYY-MM-DD (identique à start si un seul jour)",
+            },
+          },
+          required: ["start", "end"],
+        },
+      },
     ],
   },
 ];
@@ -118,11 +166,12 @@ ${JSON.stringify(currentSchedule, null, 2)}
 Personnalité & Périmètre de discussion :
 1. Ton & Ambiance : Sois toujours accueillant, sympathique et naturel, avec la convivialité d'un gérant de café passionné ☕🥐.
 2. Sujets autorisés et encouragés :
-   - Gestion des horaires, des fermetures et des congés du kiosque (ton rôle premier).
+   - Gestion des horaires, des fermetures, des congés et des horaires particuliers/exceptionnels du kiosque (ton rôle premier).
    - Informations sur les jours fériés et calendriers de vacances scolaires, que ce soit en Belgique (FWB, Flandre) ou dans les autres pays d'Europe (France, Pays-Bas, Allemagne, etc.) pour aider à anticiper les flux de voyageurs.
    - Échanges chaleureux sur la vie de la gare, les trains (SNCB), les bus (TEC), les correspondances, les cafés, snacks et douceurs de La Station.
 3. RÈGLE CRITIQUE D'ACTION :
    - Pour toute demande de congés, fermeture, modification d'horaire ou jour d'exception, appelle immédiatement l'outil (tool) adéquat avec les paramètres requis.
+   - Pour des horaires spécifiques/particuliers sur une ou plusieurs dates données (ex: "le 24 décembre ouvrir de 08:00 à 12:00", "samedi prochain exceptionnellement ouvert de 09:00 à 15:00", "du 2 au 4 mai de 10:00 à 18:00"), utilise 'propose_special_schedule'.
    - Ne prétends JAMAIS que la modification est enregistrée ou effective dans Git : tu proposes l'action via le tool, et l'utilisateur la confirmera d'un clic sur la carte interactive.
    - Si les dates ou horaires demandés sont ambigus ou incomplets, demande gentiment des précisions avec le sourire (ex: "Je ne suis pas tout à fait sûr d'avoir bien compris les dates 🧐 Pouvez-vous me préciser ça ? (Ex: 'fermer du 14 au 17 mai')").
 4. Sécurité & Confinement :
@@ -132,7 +181,7 @@ Personnalité & Périmètre de discussion :
 5. Règles techniques sur les paramètres d'outils :
    - Jours de la semaine en anglais minuscule (monday, tuesday, wednesday, thursday, friday, saturday, sunday).
    - Heures au format 24h HH:mm (ex: 06:50, 14:10, 00:00). Pour fermer toute la journée : on="00:00", off="00:00".
-   - Les jours fériés belges sont fermés par défaut. Pour ouvrir un jour férié, appelle propose_whitelist.`,
+   - Les jours fériés belges sont fermés par défaut. Pour ouvrir un jour férié aux horaires habituels, appelle propose_whitelist. Pour des horaires particuliers personnalisés sur un jour ou une période, appelle propose_special_schedule.`,
       },
     ],
   };
@@ -203,6 +252,25 @@ export function formatActionSummary(name, args = {}) {
       const day = args.day || "";
       return `${day} : ${args.on} - ${args.off}`;
     }
+    case "propose_special_schedule": {
+      const desc = args.description || args.reason;
+      const descSuffix = desc ? ` (${desc})` : "";
+      const start = args.start || args.date || "";
+      const end = args.end || args.date || start;
+      const hours = args.on === "00:00" && args.off === "00:00" ? "fermé toute la journée" : `${args.on} - ${args.off}`;
+      if (start === end) {
+        return `Horaire exceptionnel le ${formatDateFr(start)} : ${hours}${descSuffix}`;
+      }
+      return `Horaires exceptionnels du ${formatDateFr(start)} au ${formatDateFr(end)} : ${hours}${descSuffix}`;
+    }
+    case "propose_remove_special_schedule": {
+      const start = args.start || args.date || "";
+      const end = args.end || args.date || start;
+      if (start === end) {
+        return `Suppression de l'horaire exceptionnel le ${formatDateFr(start)}`;
+      }
+      return `Suppression des horaires exceptionnels du ${formatDateFr(start)} au ${formatDateFr(end)}`;
+    }
     default:
       return `${name}: ${JSON.stringify(args)}`;
   }
@@ -260,6 +328,12 @@ export function parseGeminiResponse(apiResult) {
         break;
       case "propose_schedule_change":
         reply = "Je vous propose d'appliquer ces nouveaux horaires habituels. Veuillez vérifier et confirmer ci-dessous :";
+        break;
+      case "propose_special_schedule":
+        reply = "Je vous propose d'enregistrer cet horaire exceptionnel. Veuillez vérifier et confirmer ci-dessous :";
+        break;
+      case "propose_remove_special_schedule":
+        reply = "Je vous propose de supprimer cet horaire exceptionnel. Veuillez confirmer ci-dessous :";
         break;
       default:
         reply = "Voici la proposition de mise à jour des horaires. Veuillez la confirmer ci-dessous :";
