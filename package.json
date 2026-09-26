@@ -1,6 +1,6 @@
 {
   "name": "train-station-chatops",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Standalone ChatOps PWA for train station timetable & holiday management via Cloudflare Pages and Gemini API",
   "type": "module",

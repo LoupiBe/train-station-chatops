@@ -34,6 +34,5 @@ Thumbs.db
 # Editor & IDE directories (optional local developer state)
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
+# Agent state & teamwork internal artifacts
+.agents/

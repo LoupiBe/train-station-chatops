@@ -1,9 +1,9 @@
 /**
  * Service Worker: Gare de Genval — Kiosque ChatOps
- * Cache version: kiosk-chatops-v0.1.1
+ * Cache version: kiosk-chatops-v0.1.2
  */
 
-const CACHE_NAME = 'kiosk-chatops-v0.1.1';
+const CACHE_NAME = 'kiosk-chatops-v0.1.2';
 
 const APP_SHELL = [
   '/',

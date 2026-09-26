@@ -5,6 +5,23 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 
 ---
 
+## [0.1.2] - 2026-09-26
+
+### Ajouté
+- Moteur de filtrage temporel intelligent dans le tiroir d'horaires (`ScheduleViewController`) :
+  - Recherche par date spécifique (formats ISO `YYYY-MM-DD`, `JJ/MM`, `JJ mois` ex: `14 mai`, `28 décembre`, `15/08`) affichant l'ensemble des fermetures, horaires exceptionnels et ouvertures exceptionnelles couvrant la date.
+  - Résolution automatique du jour de la semaine concerné dans la grille des horaires habituels (`#weekly-table-body`).
+  - Filtrage par mois en français (`mai`, `décembre`, `août`, etc.) affichant tous les événements et exceptions du mois concerné.
+  - Dictionnaire et calcul dynamique des jours fériés légaux belges (Ascension, Pâques, Pentecôte, 1er mai, 21 juillet, 15 août, 1er novembre, 11 novembre, Noël, Nouvel An) et des congés scolaires Fédération Wallonie-Bruxelles (Carnaval / Détente, Printemps, Été, Automne / Toussaint, Hiver / Noël).
+  - Suite complète de tests unitaires dédiée dans `tests/unit/schedule-search.test.js`.
+
+### Modifié
+- Harmonisation de l'identité de marque (« La Station ») :
+  - Mise à jour du libellé de la barre inférieure (`.footer-station`) vers `La Station`.
+  - Mise à jour du titre d'en-tête (`.brand-title`) vers `La Station — Kiosque`.
+
+---
+
 ## [0.1.1] - 2026-09-26
 
 ### Ajouté

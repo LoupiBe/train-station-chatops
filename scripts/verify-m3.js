@@ -136,7 +136,7 @@ runTest("Document title reflects Gare de Genval ChatOps", () => {
 });
 
 runTest("Header branding includes station name and train logo", () => {
-  assert.match(indexHtml, /Gare de Genval/i, "Header must contain station name 'Gare de Genval'");
+  assert.match(indexHtml, /(La Station|Gare de Genval)/i, "Header must contain station name 'La Station' or 'Gare de Genval'");
   assert.match(indexHtml, /(🚆|🚂|<svg[^>]*>)/i, "Header must contain train icon or SVG logo");
 });
 
@@ -629,7 +629,12 @@ class MockElement {
       if (inner.includes("<")) {
         el.innerHTML = inner;
       } else {
-        el.textContent = inner.trim();
+        el.textContent = inner.trim()
+          .replace(/&#039;/g, "'")
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"');
       }
       this.appendChild(el);
     }
@@ -965,6 +970,87 @@ runTest("ScheduleViewController diacritic-insensitive search matches unaccented 
   ctrl.searchQuery = ctrl.normalize("fete");
   ctrl.renderWhitelist();
   assert.ok(whitelistListEl.textContent.includes("Fête"), "Unaccented 'fete' must match whitelist 'Fête Nationale'");
+});
+
+// 8b. Actual ScheduleViewController: Intelligent Temporal Filtering & Belgian Holidays
+runTest("ScheduleViewController intelligent temporal filtering matches in-range dates, Belgian holidays, and French months", () => {
+  const tbodyEl = getOrCreateMockElement("weekly-table-body", "tbody");
+  const holidaysListEl = getOrCreateMockElement("holidays-list", "ul");
+  const whitelistListEl = getOrCreateMockElement("whitelist-list", "ul");
+  const specialListEl = getOrCreateMockElement("special-schedules-list", "ul");
+  getOrCreateMockElement("holidays-count-badge", "span");
+  getOrCreateMockElement("whitelist-count-badge", "span");
+  getOrCreateMockElement("special-count-badge", "span");
+
+  const ctrl = new ScheduleViewController();
+  ctrl.schedule = {
+    monday: { on: "06:50", off: "14:10" },
+    tuesday: { on: "06:50", off: "14:10" },
+    wednesday: { on: "06:50", off: "14:40" },
+    thursday: { on: "06:50", off: "14:10" },
+    friday: { on: "06:50", off: "14:10" },
+    saturday: { on: "00:00", off: "00:00" },
+    sunday: { on: "00:00", off: "00:00" },
+    holidays: [
+      { start: "2026-12-25", end: "2026-12-31", description: "Fêtes de fin d'année" },
+      { start: "2026-05-14", end: "2026-05-17", description: "Pont de l'Ascension" },
+      { start: "2026-08-15", end: "2026-08-15", description: "Assomption" }
+    ],
+    whitelist: [
+      { date: "2026-07-21", reason: "Fête Nationale" },
+      { date: "2026-05-14", reason: "Ouverture exceptionnelle Ascension" }
+    ],
+    special_schedules: [
+      { start: "2026-12-24", end: "2026-12-24", on: "08:00", off: "12:00", description: "Veille de Noël" },
+      { start: "2026-05-14", end: "2026-05-14", on: "08:00", off: "12:00", description: "Horaire Ascension" }
+    ]
+  };
+
+  // 1. Saisie d'une date comprise dans une période de fermeture (ex: 28/12 ou 28 décembre)
+  ctrl.searchQuery = ctrl.normalize("28/12");
+  ctrl.renderWeeklyTable();
+  ctrl.renderHolidays();
+  assert.ok(holidaysListEl.textContent.includes("25/12/2026") && holidaysListEl.textContent.includes("Fêtes"), "28/12 must match closure from 25 to 31 December");
+  assert.equal(tbodyEl.querySelectorAll("tr").length, 1, "28/12 (Monday) must filter weekly table to exactly Monday");
+  assert.ok(tbodyEl.textContent.includes("Lundi"), "Weekly table must display Lundi for 28/12/2026");
+
+  ctrl.searchQuery = ctrl.normalize("28 décembre");
+  ctrl.renderWeeklyTable();
+  ctrl.renderHolidays();
+  assert.ok(holidaysListEl.textContent.includes("25/12/2026") && holidaysListEl.textContent.includes("Fêtes"), "28 décembre must match closure from 25 to 31 December");
+  assert.ok(tbodyEl.textContent.includes("Lundi"), "Weekly table must display Lundi for 28 décembre");
+
+  // 2. Saisie de 'ascension' cible le jeudi 14 mai 2026 et les fermetures/horaires associés
+  ctrl.searchQuery = ctrl.normalize("ascension");
+  ctrl.renderWeeklyTable();
+  ctrl.renderHolidays();
+  ctrl.renderSpecialSchedules();
+  ctrl.renderWhitelist();
+  assert.equal(tbodyEl.querySelectorAll("tr").length, 1, "'ascension' must filter weekly table to Thursday");
+  assert.ok(tbodyEl.textContent.includes("Jeudi"), "Weekly table must display Jeudi for Ascension");
+  assert.ok(holidaysListEl.textContent.includes("Pont de l'Ascension"), "'ascension' must match holiday Pont de l'Ascension");
+  assert.ok(specialListEl.textContent.includes("Horaire Ascension"), "'ascension' must match special schedule Horaire Ascension");
+  assert.ok(whitelistListEl.textContent.includes("Ouverture exceptionnelle Ascension"), "'ascension' must match whitelist Ascension");
+
+  // 3. Saisie d'un mois en français (ex: 'décembre') affiche tous les éléments ayant lieu ce mois-là
+  ctrl.searchQuery = ctrl.normalize("décembre");
+  ctrl.renderWeeklyTable();
+  ctrl.renderHolidays();
+  ctrl.renderSpecialSchedules();
+  assert.equal(tbodyEl.querySelectorAll("tr").length, 7, "'décembre' must keep all weekly table days visible");
+  assert.ok(holidaysListEl.textContent.includes("Fêtes de fin d'année"), "'décembre' must match December holiday");
+  assert.ok(specialListEl.textContent.includes("Veille de Noël"), "'décembre' must match December special schedule");
+  assert.ok(!holidaysListEl.textContent.includes("Assomption"), "'décembre' must not include August holiday");
+
+  // 4. Suppression du filtre (searchQuery = "") rétablit la vue complète
+  ctrl.searchQuery = "";
+  ctrl.renderWeeklyTable();
+  ctrl.renderHolidays();
+  ctrl.renderSpecialSchedules();
+  ctrl.renderWhitelist();
+  assert.equal(tbodyEl.querySelectorAll("tr").length, 7, "Empty filter must restore 7 days in weekly table");
+  assert.ok(holidaysListEl.textContent.includes("Assomption"), "Empty filter must restore all holidays");
+  assert.ok(holidaysListEl.textContent.includes("Fêtes de fin d'année"), "Empty filter must restore all holidays");
 });
 
 // 9. Actual ScheduleViewController: First-Launch Offline Graceful Degradation
