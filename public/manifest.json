@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "Gare de Genval — Kiosque ChatOps",
-  "short_name": "Kiosque ChatOps",
-  "description": "Consultation et mise à jour des horaires et congés du kiosque de la gare de Genval via ChatOps IA",
+  "name": "Assistant des horaires La Station",
+  "short_name": "La Station",
+  "description": "Consultation et mise à jour des horaires et congés du café La Station via ChatOps IA",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

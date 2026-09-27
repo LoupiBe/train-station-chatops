@@ -161,6 +161,14 @@ html, body {
   line-height: 1;
 }
 
+.brand-logo-img {
+  height: 38px;
+  max-width: 60px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  display: block;
+}
+
 .brand-title {
   font-size: 17px;
   font-weight: 700;

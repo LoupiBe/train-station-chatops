@@ -131,13 +131,13 @@ runTest("Web App Manifest and touch icon links", () => {
   assert.match(indexHtml, /<link\s+[^>]*rel=["']apple-touch-icon["']/i, "index.html must declare apple-touch-icon");
 });
 
-runTest("Document title reflects Gare de Genval ChatOps", () => {
-  assert.match(indexHtml, /<title>.*(Genval|Kiosque|ChatOps).*<\/title>/i, "index.html title must identify Gare de Genval / Kiosque ChatOps");
+runTest("Document title reflects La Station ChatOps", () => {
+  assert.match(indexHtml, /<title>.*(La Station|Genval|Kiosque|ChatOps).*<\/title>/i, "index.html title must identify La Station / ChatOps");
 });
 
-runTest("Header branding includes station name and train logo", () => {
+runTest("Header branding includes station name and logo", () => {
   assert.match(indexHtml, /(La Station|Gare de Genval)/i, "Header must contain station name 'La Station' or 'Gare de Genval'");
-  assert.match(indexHtml, /(🚆|🚂|<svg[^>]*>)/i, "Header must contain train icon or SVG logo");
+  assert.match(indexHtml, /(logo\.png|🚆|🚂|<svg[^>]*>)/i, "Header must contain brand logo image, train icon, or SVG logo");
 });
 
 runTest("Live Brussels clock in header", () => {
@@ -316,7 +316,7 @@ runTest("manifest.json exists and parses as valid JSON", () => {
 });
 
 runTest("Manifest specifies required PWA identity fields", () => {
-  assert.ok(manifest.name && manifest.name.includes("Gare de Genval"), "manifest.name must include 'Gare de Genval'");
+  assert.ok(manifest.name && (manifest.name.includes("La Station") || manifest.name.includes("Gare de Genval")), "manifest.name must include 'La Station' or 'Gare de Genval'");
   assert.ok(manifest.short_name && manifest.short_name.length <= 30, "manifest.short_name must be concise");
 });
 

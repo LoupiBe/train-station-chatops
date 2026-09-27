@@ -397,7 +397,7 @@ export class ChatManager {
   getActionTitle(name) {
     switch (name) {
       case "propose_holiday": return "Fermeture Exceptionnelle (Congés)";
-      case "propose_remove_holiday": return "Réouverture de la Gare";
+      case "propose_remove_holiday": return "Réouverture de La Station";
       case "propose_whitelist": return "Ouverture Exceptionnelle (Férié)";
       case "propose_schedule_change": return "Modification des Horaires Habituels";
       case "propose_special_schedule":

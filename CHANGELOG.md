@@ -5,6 +5,18 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 
 ---
 
+## [0.1.3] - 2026-09-27
+
+### Modifié
+- Refonte et clarification de l'identité de marque « Assistant des horaires La Station » :
+  - Intégration du logo officiel de La Station (`https://lastation-genval.be/images/logo.png`) dans l'en-tête de l'application et déclinaison en icônes PWA haute résolution (`icon-192.png`, `icon-512.png`).
+  - Titre principal de l'en-tête mis à jour vers `La Station` avec sous-titre `Assistant des horaires`.
+  - Titre HTML `<title>` et nom PWA dans `manifest.json` mis à jour vers `Assistant des horaires La Station` (short_name: `La Station`).
+  - Message d'accueil du chat et libellés d'actions adaptés pour refléter le café La Station (`Réouverture de La Station`, etc.).
+  - Clarification explicite des instructions système de l'agent IA : La Station est un café indépendant situé à la gare de Genval, gérant exclusivement ses propres horaires et non ceux des trains de la SNCB.
+
+---
+
 ## [0.1.2] - 2026-09-26
 
 ### Ajouté
