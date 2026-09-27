@@ -1,9 +1,9 @@
 /**
  * Service Worker: Assistant des horaires La Station
- * Cache version: kiosk-chatops-v0.1.4
+ * Cache version: kiosk-chatops-v0.1.5
  */
 
-const CACHE_NAME = 'kiosk-chatops-v0.1.4';
+const CACHE_NAME = 'kiosk-chatops-v0.1.5';
 
 const APP_SHELL = [
   '/',

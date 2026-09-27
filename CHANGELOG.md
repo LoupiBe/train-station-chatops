@@ -5,6 +5,16 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 
 ---
 
+## [0.1.5] - 2026-09-27
+
+### Modifié
+- Amélioration ergonomique et cosmétique du bandeau de notification de mise à jour (`#update-toast`) :
+  - Passage en disposition verticale (`flex-direction: column`) pour placer le bouton « Recharger » à la ligne, sous le texte explicatif.
+  - Élargissement de la zone de texte pour éviter que la description ne soit compressée ou coupée sur une colonne étroite.
+  - Centrage du contenu et amélioration des marges et du retour visuel au survol/clic du bouton.
+
+---
+
 ## [0.1.4] - 2026-09-27
 
 ### Modifié

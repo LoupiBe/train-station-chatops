@@ -1132,15 +1132,17 @@ html, body {
   transform: translateX(-50%);
   background-color: var(--color-rail-navy-dark);
   color: var(--color-white);
-  padding: 12px 18px;
+  padding: 14px 20px;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   z-index: 2000;
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 12px;
-  max-width: 90%;
-  width: auto;
+  width: min(460px, calc(100vw - 32px));
+  max-width: 100%;
+  text-align: center;
 }
 
 .update-toast[hidden] {
@@ -1154,9 +1156,18 @@ html, body {
 .toast-content, .update-toast-content {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  justify-content: center;
+  gap: 10px;
+  font-size: 13.5px;
   font-weight: 500;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.toast-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  line-height: 1;
 }
 
 .btn-toast-reload, .btn-toast {
@@ -1164,12 +1175,23 @@ html, body {
   color: var(--color-white);
   border: none;
   min-height: var(--touch-min);
-  padding: 6px 14px;
+  padding: 8px 24px;
   border-radius: var(--radius-md);
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  transition: opacity 0.15s ease, transform 0.15s ease, background-color 0.15s ease;
+}
+
+.btn-toast-reload:hover, .btn-toast:hover {
+  background-color: #b45309;
+  transform: translateY(-1px);
+}
+
+.btn-toast-reload:active, .btn-toast:active {
+  transform: translateY(0);
 }
 
 /* Accessibility: Focus visible styling */
