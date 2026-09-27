@@ -337,7 +337,7 @@ export class ChatManager {
         if (data.newFileSha) this.currentSha = data.newFileSha;
         footer.innerHTML = `
           <div class="action-status-badge badge-success">
-            <span>✅ Horaires mis à jour et enregistrés avec succès sur GitHub.</span>
+            <span>✅ Modification enregistrée avec succès ! 🌙 Prise en compte sur le kiosque physique cette nuit.</span>
           </div>
         `;
         if (this.onScheduleUpdated) {

@@ -696,6 +696,19 @@ html, body {
   margin-bottom: 8px;
 }
 
+.message-body ul.chat-welcome-list {
+  margin-top: 6px;
+  margin-left: 18px;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.message-body ul.chat-welcome-list li {
+  line-height: 1.4;
+}
+
 .message-body code {
   background-color: rgba(0, 0, 0, 0.06);
   padding: 2px 4px;

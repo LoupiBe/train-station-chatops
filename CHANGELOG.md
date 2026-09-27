@@ -5,6 +5,14 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 
 ---
 
+## [0.1.4] - 2026-09-27
+
+### Modifié
+- Message d'accueil du bot enrichi : rappel explicite de la consultation des horaires encodés via le bouton `[📅 Horaires]` et de la validation systématique par bouton de confirmation interactif.
+- Notification de synchronisation nocturne : mise en évidence sur le badge de confirmation finale (`badge-success`) que les modifications seront prises en compte sur le kiosque physique durant la nuit.
+
+---
+
 ## [0.1.3] - 2026-09-27
 
 ### Modifié
