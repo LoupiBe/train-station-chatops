@@ -10,6 +10,28 @@ export const UPDATE_PROMPT_MESSAGE = "Une nouvelle version toute fraîche est pr
 let isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 let swRegistration = null;
 let refreshing = false;
+let lastSwUpdateCheckTime = 0;
+const SW_UPDATE_THROTTLE_MS = 10000; // 10s throttle on focus/visibility
+
+/**
+ * Trigger an update check on the active service worker registration.
+ * Throttled to avoid network bursts on rapid window focus/visibility changes.
+ * @param {boolean} [force=false]
+ * @returns {Promise<void>}
+ */
+export async function checkForServiceWorkerUpdate(force = false) {
+  if (!swRegistration) return;
+  const now = Date.now();
+  if (!force && (now - lastSwUpdateCheckTime < SW_UPDATE_THROTTLE_MS)) {
+    return;
+  }
+  lastSwUpdateCheckTime = now;
+  try {
+    await swRegistration.update();
+  } catch {
+    // Gracefully ignore network errors during background update checks
+  }
+}
 
 /**
  * Register Service Worker and configure update lifecycle
@@ -19,18 +41,18 @@ export function registerServiceWorker() {
     return;
   }
 
-  window.addEventListener('load', async () => {
+  const handleRegistration = async () => {
     try {
-      swRegistration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      swRegistration = await navigator.serviceWorker.register('/sw.js', {
+        scope: '/',
+        updateViaCache: 'none'
+      });
 
       // 1. If an updated worker is already waiting, prompt immediately
       if (swRegistration.waiting) {
         showUpdateToast(swRegistration.waiting);
-        return;
-      }
-
-      // 2. If a worker is installing, wait until it reaches 'installed'
-      if (swRegistration.installing) {
+      } else if (swRegistration.installing) {
+        // 2. If a worker is installing, wait until it reaches 'installed'
         trackInstallingWorker(swRegistration.installing);
       }
 
@@ -38,10 +60,21 @@ export function registerServiceWorker() {
       swRegistration.addEventListener('updatefound', () => {
         trackInstallingWorker(swRegistration.installing);
       });
+
+      // 4. Force a network update check immediately upon startup
+      await checkForServiceWorkerUpdate(true);
     } catch {
       // Service worker registration error in development or restricted context
     }
-  });
+  };
+
+  // Safe registration: execute immediately if document is already parsed/interactive,
+  // or listen for 'load' if still loading, avoiding the dead listener trap.
+  if (typeof document !== 'undefined' && document.readyState === 'loading') {
+    window.addEventListener('load', handleRegistration);
+  } else {
+    handleRegistration();
+  }
 
   // Safe reload once new worker claims controller
   navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -50,13 +83,32 @@ export function registerServiceWorker() {
       window.location.reload();
     }
   });
+
+  // Re-check for app updates on tab focus and visibilitychange (throttled)
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        checkForServiceWorkerUpdate(false);
+      }
+    });
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', () => {
+      checkForServiceWorkerUpdate(false);
+    });
+  }
 }
 
 /**
  * Track installing worker and trigger update toast once ready
  */
-function trackInstallingWorker(worker) {
+export function trackInstallingWorker(worker) {
   if (!worker) return;
+  // If already installed (e.g. fast transition or cached worker)
+  if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+    showUpdateToast(worker);
+    return;
+  }
   worker.addEventListener('statechange', () => {
     if (worker.state === 'installed' && navigator.serviceWorker.controller) {
       // Existing active controller means this is an app update
@@ -68,7 +120,7 @@ function trackInstallingWorker(worker) {
 /**
  * Display update prompt toast
  */
-function showUpdateToast(waitingWorker) {
+export function showUpdateToast(waitingWorker) {
   const toast = document.getElementById('update-toast');
   const toastText = document.getElementById('update-toast-text');
   const toastBtn = document.getElementById('update-toast-btn') || document.getElementById('toast-reload-btn');

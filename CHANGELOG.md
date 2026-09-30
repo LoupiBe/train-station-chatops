@@ -5,6 +5,17 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 
 ---
 
+## [0.2.6] - 2026-09-30
+
+### Corrigé
+- Cycle de vie du Service Worker : élimination de la *race condition* sur l'événement `load` lorsque la page est servie depuis le cache local (`document.readyState !== 'loading'`).
+- Détection instantanée des mises à jour : appel proactif de `swRegistration.update()` dès l'initialisation et ajout de l'option standard W3C `updateViaCache: 'none'`.
+- Re-vérification automatique de la version de l'application lors du retour sur l'onglet (`visibilitychange` et `focus`) avec *throttling* de 10 secondes.
+- Prise en charge immédiate des workers déjà en état `installed` dans `trackInstallingWorker`.
+- Ajout du fichier de configuration Cloudflare Pages `public/_headers` forçant `Cache-Control: no-cache, no-store, must-revalidate` sur `/sw.js`.
+
+---
+
 ## [0.2.5] - 2026-09-30
 
 ### Ajouté
