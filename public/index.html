@@ -22,6 +22,23 @@
       </div>
     </aside>
 
+    <!-- Top Sync Warning Amber Banner (R2) -->
+    <aside id="sync-warning-banner" class="banner-sync-warning" role="alert" aria-live="polite" hidden>
+      <div class="banner-inner">
+        <span class="banner-icon" aria-hidden="true">⚠️</span>
+        <p class="banner-text" id="sync-warning-text">
+          <span class="sync-warning-desc">Attention : Les données affichées proviennent du cache local suite à des échecs de synchronisation.</span>
+          <span class="sync-warning-last-time" id="sync-warning-last-time">Dernière synchronisation réussie : inconnue</span>
+        </p>
+        <div class="banner-actions">
+          <button type="button" id="sync-warning-retry-btn" class="btn-banner-retry" aria-label="Réessayer la synchronisation">
+            Réessayer 🔄
+          </button>
+          <button type="button" id="sync-warning-close-btn" class="btn-banner-close" aria-label="Fermer la bannière d'avertissement">✕</button>
+        </div>
+      </div>
+    </aside>
+
     <!-- App Header -->
     <header class="app-header" role="banner">
       <div class="header-main">
@@ -209,7 +226,7 @@
 
       <div class="app-footer-bar">
         <div class="footer-left">
-          <span class="footer-version" id="footer-version">v0.1.5</span>
+          <span class="footer-version" id="footer-version">v0.2.5</span>
           <span class="footer-sep" aria-hidden="true">•</span>
           <span class="footer-station">La Station</span>
         </div>

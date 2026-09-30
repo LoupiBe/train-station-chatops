@@ -9,6 +9,7 @@ export const ERROR_MESSAGES = {
   githubCommitFail: "Petit accroc technique dans la salle des machines 🚂 Impossible d'enregistrer pour l'instant. Pas d'inquiétude, le planning actuel reste inchangé.",
   ambiguousDates: "Je ne suis pas tout à fait sûr d'avoir bien compris les dates 🧐 Pouvez-vous me préciser ça ? (Ex: 'fermer du 14 au 17 mai') ",
   appUpdate: "Une nouvelle version toute fraîche est prête ! 🚀 Cliquez pour recharger.",
+  shaConflict: "⚠️ Le planning a été modifié entre-temps par un autre collaborateur. Les horaires viennent d'être rafraîchis. Veuillez revérifier les horaires actuels avant de renouveler votre demande.",
 };
 
 let globalChatManager = null;
@@ -301,6 +302,9 @@ export class ChatManager {
    * @param {HTMLElement} footer
    */
   async executeConfirm(card, action, sha, footer) {
+    if (card && card._isConfirming) return;
+    if (card) card._isConfirming = true;
+
     const confirmBtn = footer.querySelector(".btn-action-confirm");
     const cancelBtn = footer.querySelector(".btn-action-cancel");
     const retryBtn = footer.querySelector(".btn-action-retry");
@@ -318,38 +322,84 @@ export class ChatManager {
       retryBtn.textContent = "Nouvelle tentative... ⏳";
     }
 
-    const targetSha = (this.getScheduleSha ? this.getScheduleSha() : null) || this.currentSha || sha;
-
     try {
-      const res = await fetch("/api/confirm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: action.name,
-          payload: action.args,
-          sha: targetSha,
-        }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (res.ok && data.success) {
-        if (data.newFileSha) this.currentSha = data.newFileSha;
-        footer.innerHTML = `
-          <div class="action-status-badge badge-success">
-            <span>✅ Modification enregistrée avec succès ! 🌙 Prise en compte sur le kiosque physique cette nuit.</span>
-          </div>
-        `;
-        if (this.onScheduleUpdated) {
-          this.onScheduleUpdated();
+      if (this._pendingScheduleUpdate) {
+        try {
+          const updateResult = await this._pendingScheduleUpdate;
+          if (updateResult) {
+            if (typeof updateResult === "string") {
+              this.currentSha = updateResult;
+            } else if (typeof updateResult.sha === "string") {
+              this.currentSha = updateResult.sha;
+            }
+          }
+        } catch {
+          // ignore background refresh failure
         }
-      } else {
-        // GitHub commit failure / Conflict (HTTP 409)
-        const errMsg = data.error || ERROR_MESSAGES.githubCommitFail;
-        this.renderConfirmError(card, action, sha, footer, errMsg);
+        this._pendingScheduleUpdate = null;
       }
-    } catch {
-      this.renderConfirmError(card, action, sha, footer, ERROR_MESSAGES.githubCommitFail);
+
+      let fetchedSha = null;
+      if (typeof this.getScheduleSha === "function") {
+        try {
+          fetchedSha = this.getScheduleSha();
+        } catch {
+          // ignore error in getScheduleSha
+        }
+      }
+      const targetSha = fetchedSha || this.currentSha || sha;
+
+      try {
+        const res = await fetch("/api/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: action.name,
+            payload: action.args,
+            sha: targetSha,
+          }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok && data.success) {
+          if (data.newFileSha) this.currentSha = data.newFileSha;
+          footer.innerHTML = `
+            <div class="action-status-badge badge-success">
+              <span>✅ Modification enregistrée avec succès ! 🌙 Prise en compte sur le kiosque physique cette nuit.</span>
+            </div>
+          `;
+          if (this.onScheduleUpdated) {
+            try {
+              this._pendingScheduleUpdate = Promise.resolve(this.onScheduleUpdated()).catch(() => null);
+            } catch {
+              this._pendingScheduleUpdate = null;
+            }
+          }
+        } else {
+          // Intercept concurrency conflicts (HTTP 409, SHA_CONFLICT) (R3)
+          const isConflict = res.status === 409 || data.code === "SHA_CONFLICT" || data.conflict === true;
+          if (isConflict) {
+            const conflictMsg = ERROR_MESSAGES.shaConflict;
+            this.renderConfirmError(card, action, sha, footer, conflictMsg, true);
+            if (this.onScheduleUpdated) {
+              try {
+                this._pendingScheduleUpdate = Promise.resolve(this.onScheduleUpdated()).catch(() => null);
+              } catch {
+                this._pendingScheduleUpdate = null;
+              }
+            }
+          } else {
+            // GitHub commit failure
+            const errMsg = data.error || ERROR_MESSAGES.githubCommitFail;
+            this.renderConfirmError(card, action, sha, footer, errMsg, false);
+          }
+        }
+      } catch {
+        this.renderConfirmError(card, action, sha, footer, ERROR_MESSAGES.githubCommitFail, false);
+      }
+    } finally {
+      if (card) card._isConfirming = false;
     }
   }
 
@@ -360,10 +410,12 @@ export class ChatManager {
    * @param {string|null} sha
    * @param {HTMLElement} footer
    * @param {string} errMsg
+   * @param {boolean} [isConflict=false]
    */
-  renderConfirmError(card, action, sha, footer, errMsg) {
+  renderConfirmError(card, action, sha, footer, errMsg, isConflict = false) {
+    const badgeClass = isConflict ? "action-status-badge badge-error badge-conflict" : "action-status-badge badge-error";
     footer.innerHTML = `
-      <div class="action-status-badge badge-error">
+      <div class="${badgeClass}">
         <span>${this.escapeHtml(errMsg)}</span>
         <div style="margin-top: 6px; display: flex; gap: 8px;">
           <button type="button" class="btn-action-retry">Réessayer 🔄</button>

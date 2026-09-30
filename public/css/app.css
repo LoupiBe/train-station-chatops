@@ -130,6 +130,135 @@ html, body {
   flex: 1;
 }
 
+/* Top Sync Warning Amber Banner (R2) */
+.banner-sync-warning, #sync-warning-banner {
+  background-color: var(--color-amber-bg);
+  border-bottom: 2px solid var(--color-amber-border);
+  color: var(--color-amber-text);
+  padding: 10px 16px;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  position: relative;
+  z-index: 1100;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.banner-sync-warning[hidden], #sync-warning-banner[hidden] {
+  display: none !important;
+}
+
+.banner-sync-warning.visible, #sync-warning-banner.visible {
+  display: block;
+}
+
+.banner-sync-warning .banner-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.banner-sync-warning .banner-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.banner-sync-warning .banner-text {
+  flex: 1;
+  margin: 0;
+}
+
+.banner-sync-warning .sync-warning-last-time {
+  font-weight: 500;
+  margin-left: 4px;
+}
+
+.banner-sync-warning .banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.banner-sync-warning .btn-banner-retry {
+  background-color: var(--color-amber-text);
+  color: var(--color-white);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  gap: 4px;
+  transition: background-color 0.2s;
+}
+
+.banner-sync-warning .btn-banner-retry:hover {
+  background-color: #92400e;
+}
+
+.banner-sync-warning .btn-banner-close {
+  background: transparent;
+  border: none;
+  color: var(--color-amber-text);
+  font-size: 16px;
+  font-weight: bold;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+  min-width: 32px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+.banner-sync-warning .btn-banner-close:hover {
+  background-color: rgba(180, 83, 9, 0.15);
+}
+
+@media (max-width: 600px) {
+  .banner-sync-warning .banner-inner {
+    flex-wrap: wrap;
+  }
+}
+
+/* Ensure schedule drawer and backdrop sit cleanly below the warning banner when visible */
+#sync-warning-banner.visible ~ #schedule-drawer,
+#sync-warning-banner:not([hidden]) ~ #schedule-drawer {
+  top: var(--sync-warning-banner-height, 46px);
+  height: calc(100% - var(--sync-warning-banner-height, 46px));
+  height: calc(100dvh - var(--sync-warning-banner-height, 46px));
+}
+
+#sync-warning-banner.visible ~ #drawer-backdrop,
+#sync-warning-banner:not([hidden]) ~ #drawer-backdrop {
+  top: var(--sync-warning-banner-height, 46px);
+}
+
+#offline-banner:not([hidden]) ~ #sync-warning-banner:not([hidden]) ~ #schedule-drawer,
+#offline-banner.visible ~ #sync-warning-banner.visible ~ #schedule-drawer {
+  top: calc(var(--sync-warning-banner-height, 46px) + 46px);
+  height: calc(100% - var(--sync-warning-banner-height, 46px) - 46px);
+  height: calc(100dvh - var(--sync-warning-banner-height, 46px) - 46px);
+}
+
+#offline-banner:not([hidden]) ~ #sync-warning-banner:not([hidden]) ~ #drawer-backdrop,
+#offline-banner.visible ~ #sync-warning-banner.visible ~ #drawer-backdrop {
+  top: calc(var(--sync-warning-banner-height, 46px) + 46px);
+}
+
 /* Header */
 .app-header {
   background-color: var(--color-rail-navy);
@@ -886,7 +1015,8 @@ html, body {
   color: var(--color-text-muted);
 }
 
-.action-status-badge.badge-error {
+.action-status-badge.badge-error,
+.action-status-badge.badge-conflict {
   background-color: var(--color-amber-bg);
   border: 1px solid var(--color-amber-border);
   color: var(--color-amber-text);

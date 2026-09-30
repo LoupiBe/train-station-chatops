@@ -3,7 +3,7 @@
  * Schedule Consultation Drawer Controller, Search Filter, and Offline Caching
  */
 
-const STORAGE_KEYS = {
+export const STORAGE_KEYS = {
   SCHEDULE: "kiosk_schedule_data_v1",
   SHA: "kiosk_schedule_sha_v1",
   TIMESTAMP: "kiosk_schedule_timestamp_v1",
@@ -656,11 +656,28 @@ export class ScheduleViewController {
     this.clearSearchBtn = options.clearSearchButton || (typeof document !== 'undefined' ? document.getElementById("clear-search-btn") : null);
     this.refreshBtn = options.refreshButton || (typeof document !== 'undefined' ? document.getElementById("refresh-schedule-btn") : null);
 
+    // Warning Banner Elements (R2)
+    this.warningBanner = options.warningBanner || (typeof document !== 'undefined' ? document.getElementById("sync-warning-banner") : null);
+    this.warningText = options.warningText || (typeof document !== 'undefined' ? document.getElementById("sync-warning-text") : null);
+    this.warningRetryBtn = options.warningRetryBtn || (typeof document !== 'undefined' ? document.getElementById("sync-warning-retry-btn") : null);
+    this.warningCloseBtn = options.warningCloseBtn || (typeof document !== 'undefined' ? document.getElementById("sync-warning-close-btn") : null);
+
     this.schedule = null;
     this.sha = null;
     this.rawSearchQuery = "";
     this.searchQuery = "";
     this.isOpen = false;
+
+    // Concurrency, Failure Counting & Freshness Throttling (R1, R2)
+    this.consecutiveFailures = 0;
+    this.lastFetchTime = 0;
+    this.freshnessThrottleMs = 10000;
+    this._freshnessListenersAttached = false;
+    this._warningListenersAttached = false;
+    this.warningBannerDismissed = false;
+    this.lastSuccessfulSyncTime = null;
+    this._activeFetchPromise = null;
+    this._currentFetchSilent = true;
   }
 
   /**
@@ -731,6 +748,12 @@ export class ScheduleViewController {
     // 5. Initial schedule fetch (from cache immediately, then network)
     this.loadFromCache();
     this.fetchSchedule(true);
+
+    // 6. Sync Warning Banner event listeners (R2)
+    this._bindWarningBannerEvents();
+
+    // 7. Focus & visibility freshness check listeners (R1)
+    this.setupFreshnessListeners();
   }
 
   toggle() {
@@ -809,35 +832,287 @@ export class ScheduleViewController {
     }
   }
 
+  _resolveWarningBannerElements() {
+    if (typeof document === 'undefined') return;
+    if (!this.warningBanner) {
+      this.warningBanner = document.getElementById("sync-warning-banner");
+    }
+    if (this.warningBanner) {
+      if (!this.warningText) {
+        this.warningText = (this.warningBanner.querySelector && this.warningBanner.querySelector("#sync-warning-text, .banner-text")) ||
+          document.getElementById("sync-warning-text");
+      }
+      if (!this.warningRetryBtn) {
+        this.warningRetryBtn = (this.warningBanner.querySelector && this.warningBanner.querySelector("#sync-warning-retry-btn, .btn-banner-retry")) ||
+          document.getElementById("sync-warning-retry-btn");
+      }
+      if (!this.warningCloseBtn) {
+        this.warningCloseBtn = (this.warningBanner.querySelector && this.warningBanner.querySelector("#sync-warning-close-btn, .btn-banner-close")) ||
+          document.getElementById("sync-warning-close-btn");
+      }
+    }
+  }
+
+  _bindWarningBannerEvents() {
+    this._resolveWarningBannerElements();
+
+    if (this.warningRetryBtn && !this._warningRetryAttached) {
+      this.warningRetryBtn.addEventListener("click", () => {
+        this.warningBannerDismissed = false;
+        this.fetchSchedule(false);
+      });
+      this._warningRetryAttached = true;
+    }
+    if (this.warningCloseBtn && !this._warningCloseAttached) {
+      this.warningCloseBtn.addEventListener("click", () => {
+        this.hideWarningBanner(true);
+      });
+      this._warningCloseAttached = true;
+    }
+
+    if (this._warningRetryAttached || this._warningCloseAttached) {
+      this._warningListenersAttached = true;
+    }
+  }
+
+  showWarningBanner() {
+    this._resolveWarningBannerElements();
+    this._bindWarningBannerEvents();
+    if (!this.warningBanner) return;
+
+    this.warningBanner.hidden = false;
+    this.warningBanner.classList.add("visible");
+    this.warningBannerDismissed = false;
+
+    if (typeof document !== 'undefined' && document.documentElement && document.documentElement.style) {
+      const h = this.warningBanner.offsetHeight;
+      if (h) {
+        document.documentElement.style.setProperty('--sync-warning-banner-height', `${h}px`);
+      }
+    }
+
+    const lastSync = this.getLastSyncFormatted();
+    const timeText = `Dernière synchronisation réussie : ${lastSync}`;
+
+    const lastTimeEl = (typeof document !== 'undefined' ? document.getElementById("sync-warning-last-time") : null) ||
+      (this.warningBanner.querySelector ? this.warningBanner.querySelector("#sync-warning-last-time, .sync-warning-last-time") : null);
+
+    if (this.warningText) {
+      if (lastTimeEl && (this.warningText === lastTimeEl.parentElement || (this.warningText.contains && this.warningText.contains(lastTimeEl)))) {
+        lastTimeEl.textContent = timeText;
+      } else {
+        this.warningText.textContent = `Attention : Les données affichées proviennent du cache local suite à des échecs de synchronisation. ${timeText}.`;
+        if (lastTimeEl) {
+          lastTimeEl.textContent = timeText;
+        }
+      }
+    } else if (lastTimeEl) {
+      lastTimeEl.textContent = timeText;
+    }
+  }
+
+  hideWarningBanner(userDismissed = false) {
+    this._resolveWarningBannerElements();
+    if (!this.warningBanner) return;
+    this.warningBanner.hidden = true;
+    this.warningBanner.classList.remove("visible");
+    if (userDismissed) {
+      this.warningBannerDismissed = true;
+    }
+    if (typeof document !== 'undefined' && document.documentElement && document.documentElement.style) {
+      document.documentElement.style.removeProperty('--sync-warning-banner-height');
+    }
+  }
+
+  getLastSyncFormatted() {
+    try {
+      let ts = null;
+      if (typeof localStorage !== 'undefined') {
+        try {
+          ts = localStorage.getItem(STORAGE_KEYS.TIMESTAMP);
+        } catch {
+          // localStorage restricted
+        }
+      }
+      if (this.lastSuccessfulSyncTime) {
+        if (!ts || isNaN(new Date(ts).getTime()) || new Date(this.lastSuccessfulSyncTime) > new Date(ts)) {
+          ts = this.lastSuccessfulSyncTime;
+        }
+      }
+      if (!ts) return "inconnue";
+
+      const date = new Date(ts);
+      if (isNaN(date.getTime()) || date.getFullYear() < 2020) return "inconnue";
+
+      const now = new Date();
+      const fmtDay = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Europe/Brussels",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+      const isSameDay = fmtDay.format(date) === fmtDay.format(now);
+
+      if (isSameDay) {
+        return new Intl.DateTimeFormat("fr-BE", {
+          timeZone: "Europe/Brussels",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }).format(date);
+      }
+
+      return new Intl.DateTimeFormat("fr-BE", {
+        timeZone: "Europe/Brussels",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).format(date).replace(",", " à");
+    } catch {
+      return "inconnue";
+    }
+  }
+
+  checkFreshness(throttleMs = this.freshnessThrottleMs) {
+    const now = Date.now();
+    if (this.lastFetchTime && now >= this.lastFetchTime && (now - this.lastFetchTime < throttleMs)) {
+      return Promise.resolve(null);
+    }
+    return this.fetchSchedule(true);
+  }
+
+  setupFreshnessListeners(throttleMs = 10000) {
+    this.freshnessThrottleMs = throttleMs;
+    if (this._freshnessListenersAttached) return this._freshnessHandler;
+    this._freshnessListenersAttached = true;
+
+    this._freshnessHandler = () => {
+      if (typeof document !== 'undefined' && document.visibilityState && document.visibilityState !== "visible") {
+        return Promise.resolve(null);
+      }
+      return Promise.resolve(this.checkFreshness(this.freshnessThrottleMs)).catch(() => null);
+    };
+
+    if (typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener("visibilitychange", this._freshnessHandler);
+    }
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener("focus", this._freshnessHandler);
+    }
+
+    return this._freshnessHandler;
+  }
+
+  removeFreshnessListeners() {
+    if (!this._freshnessListenersAttached) return;
+    if (typeof document !== 'undefined' && document.removeEventListener) {
+      document.removeEventListener("visibilitychange", this._freshnessHandler);
+    }
+    if (typeof window !== 'undefined' && window.removeEventListener) {
+      window.removeEventListener("focus", this._freshnessHandler);
+    }
+    this._freshnessListenersAttached = false;
+  }
+
   async fetchSchedule(silent = false) {
-    if (this.refreshBtn && !silent) {
+    if (!silent) {
+      this.warningBannerDismissed = false;
+      this._currentFetchSilent = false;
+    }
+
+    if (this._activeFetchPromise) {
+      if (!silent) {
+        if (this.refreshBtn) {
+          this.refreshBtn.disabled = true;
+          const label = this.refreshBtn.querySelector(".refresh-label");
+          if (label) label.textContent = "Chargement...";
+        }
+        if (this.warningRetryBtn) {
+          this.warningRetryBtn.disabled = true;
+        }
+      }
+      return this._activeFetchPromise;
+    }
+
+    this._currentFetchSilent = silent;
+    this._activeFetchPromise = this._doFetchSchedule();
+    try {
+      return await this._activeFetchPromise;
+    } finally {
+      this._activeFetchPromise = null;
+    }
+  }
+
+  async _doFetchSchedule() {
+    this.lastFetchTime = Date.now();
+
+    if (this.refreshBtn && !this._currentFetchSilent) {
       this.refreshBtn.disabled = true;
       const label = this.refreshBtn.querySelector(".refresh-label");
       if (label) label.textContent = "Chargement...";
+    }
+    if (this.warningRetryBtn && !this._currentFetchSilent) {
+      this.warningRetryBtn.disabled = true;
     }
 
     try {
       const res = await fetch("/api/status");
       if (res.ok) {
         const data = await res.json();
+        if (!data || !data.schedule || typeof data.schedule !== 'object') {
+          throw new Error("Invalid schedule payload received from /api/status");
+        }
         this.schedule = data.schedule;
-        this.sha = data.sha;
+        this.sha = data.sha || this.sha;
+        this.consecutiveFailures = 0;
+        this.warningBannerDismissed = false;
+        this.lastSuccessfulSyncTime = new Date().toISOString();
+        this.hideWarningBanner();
         this.saveToCache(data.schedule, data.sha);
         this.render(false, data.brusselsTime);
+        return { success: true, schedule: this.schedule, sha: this.sha };
       } else {
         // Fallback to cache if network returned error
+        this.consecutiveFailures++;
+        if (this.consecutiveFailures >= 5) {
+          if (!this.warningBannerDismissed || !this._currentFetchSilent) {
+            this.showWarningBanner();
+          }
+        }
         this.loadFromCache();
-        if (!this.schedule) this.render(true);
+        if (!this.schedule) {
+          this.render(true);
+        } else {
+          this.renderMeta(true);
+        }
+        return { success: false, status: res.status };
       }
-    } catch {
+    } catch (err) {
       // Network failed: fallback to offline cache
+      this.consecutiveFailures++;
+      if (this.consecutiveFailures >= 5) {
+        if (!this.warningBannerDismissed || !this._currentFetchSilent) {
+          this.showWarningBanner();
+        }
+      }
       this.loadFromCache();
-      if (!this.schedule) this.render(true);
+      if (!this.schedule) {
+        this.render(true);
+      } else {
+        this.renderMeta(true);
+      }
+      return { success: false, error: err };
     } finally {
       if (this.refreshBtn) {
         this.refreshBtn.disabled = false;
         const label = this.refreshBtn.querySelector(".refresh-label");
         if (label) label.textContent = "Actualiser";
+      }
+      if (this.warningRetryBtn) {
+        this.warningRetryBtn.disabled = false;
       }
     }
   }
@@ -888,14 +1163,19 @@ export class ScheduleViewController {
 
     if (syncTimeEl) {
       try {
-        const now = new Date();
-        const timeStr = new Intl.DateTimeFormat("fr-BE", {
-          timeZone: "Europe/Brussels",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        }).format(now);
-        syncTimeEl.textContent = `Dernière sync : ${timeStr}`;
+        if (isCached) {
+          const lastSync = this.getLastSyncFormatted();
+          syncTimeEl.textContent = `Dernière sync : ${lastSync}`;
+        } else {
+          const now = new Date();
+          const timeStr = new Intl.DateTimeFormat("fr-BE", {
+            timeZone: "Europe/Brussels",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }).format(now);
+          syncTimeEl.textContent = `Dernière sync : ${timeStr}`;
+        }
       } catch {
         syncTimeEl.textContent = "Dernière sync : Récente";
       }
@@ -1447,5 +1727,15 @@ export function initScheduleView(options = {}) {
 export function fetchAndRenderSchedule(silent = false) {
   if (globalController) {
     return globalController.fetchSchedule(silent);
+  }
+}
+
+/**
+ * Functional convenience helper for setting up tab freshness listeners (focus & visibilitychange)
+ */
+export function initFreshnessListeners(scheduleController, throttleMs = 10000) {
+  if (scheduleController && typeof scheduleController.setupFreshnessListeners === "function") {
+    scheduleController.setupFreshnessListeners(throttleMs);
+    return scheduleController._freshnessHandler;
   }
 }

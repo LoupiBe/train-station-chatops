@@ -5,6 +5,21 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 
 ---
 
+## [0.2.5] - 2026-09-30
+
+### Ajouté
+- Re-vérification automatique de fraîcheur de `schedule.json` à l'ouverture et au retour sur l'onglet (`visibilitychange` et `focus`) avec *throttling* de 10 secondes et déduplication des requêtes en vol.
+- Bannière d'avertissement ambre (`#sync-warning-banner`, `.banner-sync-warning`) déclenchée dès le 5e échec consécutif de synchronisation réseau, avec indication de l'heure de la dernière synchronisation réussie (`Europe/Brussels`), bouton `[Réessayer 🔄]` et bouton de fermeture `[✕]`.
+- Gestion déculpabilisante des conflits de concurrence Git SHA (HTTP 409 `SHA_CONFLICT`) dans `chat.js` avec message explicite et rafraîchissement automatique du planning en arrière-plan.
+- Support complet des horaires exceptionnels et spéciaux (`special_schedules`).
+- Suite de tests unitaires dédiée `tests/unit/sync-warning-conflict.test.js` (39 tests).
+
+### Modifié
+- Bump de version vers `v0.2.5` dans `package.json`, `index.html`, `sw.js` (cache `kiosk-chatops-v0.2.5`) et l'API GitHub.
+- Service Worker : transmission d'une erreur 503 explicite sur `/api/status` en mode hors-ligne pour permettre au client de détecter correctement les pannes réseau.
+
+---
+
 ## [0.1.5] - 2026-09-27
 
 ### Modifié

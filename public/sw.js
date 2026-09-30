@@ -1,9 +1,9 @@
 /**
  * Service Worker: Assistant des horaires La Station
- * Cache version: kiosk-chatops-v0.1.5
+ * Cache version: kiosk-chatops-v0.2.5
  */
 
-const CACHE_NAME = 'kiosk-chatops-v0.1.5';
+const CACHE_NAME = 'kiosk-chatops-v0.2.5';
 
 const APP_SHELL = [
   '/',
@@ -93,39 +93,28 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // B. Schedule Status API (/api/status): Network-First with Cache Fallback
+  // B. Schedule Status API (/api/status): Network-Only with 503 Fallback
+  // The client ScheduleViewController manages its own localStorage caching, consecutive failure
+  // counting, and amber sync warning banner display. Returning a cached 200 OK would mask network
+  // failures and prevent the warning banner from ever displaying.
   if (url.pathname === '/api/status') {
     event.respondWith(
-      fetch(request)
-        .then((networkResponse) => {
-          if (networkResponse && networkResponse.ok) {
-            const responseClone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, responseClone);
-            });
-          }
-          return networkResponse;
-        })
-        .catch(async () => {
-          const cachedResponse = await caches.match(request);
-          if (cachedResponse) {
-            return cachedResponse;
-          }
-          return new Response(
-            JSON.stringify({
-              error: OFFLINE_MESSAGE,
-              offline: true,
-              schedule: null
-            }),
-            {
-              status: 503,
-              statusText: 'Service Unavailable',
-              headers: {
-                'Content-Type': 'application/json; charset=utf-8'
-              }
+      fetch(request).catch(() => {
+        return new Response(
+          JSON.stringify({
+            error: OFFLINE_MESSAGE,
+            offline: true,
+            schedule: null
+          }),
+          {
+            status: 503,
+            statusText: 'Service Unavailable',
+            headers: {
+              'Content-Type': 'application/json; charset=utf-8'
             }
-          );
-        })
+          }
+        );
+      })
     );
     return;
   }
