@@ -411,3 +411,46 @@ export function initInstallPrompt(options = {}) {
     }
   }
 }
+
+/**
+ * Executes a full hard purge and application reload:
+ * 1. Purges all CacheStorage caches
+ * 2. Unregisters all active Service Workers
+ * 3. Removes schedule caches from localStorage
+ * 4. Clears sessionStorage to ensure clean slate
+ * 5. Replaces location with anti-cache timestamp parameter
+ * @returns {Promise<void>}
+ */
+export async function hardPurgeAndReload() {
+  try {
+    if (typeof caches !== 'undefined' && caches.keys) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map((r) => r.unregister()));
+    }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('kiosk_schedule_cache');
+      localStorage.removeItem('kiosk_schedule_sha');
+      localStorage.removeItem('kiosk_last_sync');
+      localStorage.removeItem('kiosk_consecutive_failures');
+    }
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.clear();
+    }
+  } catch {
+    // Ignore teardown cleanup errors
+  }
+
+  if (typeof window !== 'undefined' && window.location) {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('_t', Date.now().toString());
+      window.location.replace(url.toString());
+    } catch {
+      window.location.reload();
+    }
+  }
+}

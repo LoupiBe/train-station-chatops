@@ -191,7 +191,12 @@ runTest("Action confirmation card buttons referenced in markup or template", () 
   );
 });
 
-runTest("Version string explicitly displayed in footer", () => {
+runTest("Version string explicitly displayed in footer matches package.json", () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, "package.json"), "utf-8"));
+  assert.ok(
+    indexHtml.includes(`id="footer-version">v${pkg.version}</span>`),
+    `Footer must explicitly display 'v${pkg.version}' matching package.json`
+  );
   assert.match(
     indexHtml,
     /<footer[^>]*>[\s\S]*v\d+\.\d+\.\d+[\s\S]*<\/footer>/i,

@@ -140,6 +140,22 @@ export const GEMINI_TOOLS = [
           required: ["start", "end"],
         },
       },
+      {
+        name: "refresh_schedule_data",
+        description: "Actualiser immédiatement les données des horaires affichées à l'écran depuis le serveur sans recharger la page. À utiliser quand l'utilisateur demande d'actualiser, synchroniser ou rafraîchir les horaires actuels.",
+        parameters: {
+          type: "OBJECT",
+          properties: {},
+        },
+      },
+      {
+        name: "hard_reload_app",
+        description: "Purger tous les caches de l'application (CacheStorage, localStorage) et forcer le rechargement complet de la page. À utiliser quand l'utilisateur demande explicitement un rafraîchissement forcé, un rechargement forcé, un hard reload, ou de vider le cache de l'application.",
+        parameters: {
+          type: "OBJECT",
+          properties: {},
+        },
+      },
     ],
   },
 ];
@@ -182,7 +198,9 @@ Personnalité & Périmètre de discussion :
 5. Règles techniques sur les paramètres d'outils :
    - Jours de la semaine en anglais minuscule (monday, tuesday, wednesday, thursday, friday, saturday, sunday).
    - Heures au format 24h HH:mm (ex: 06:50, 14:10, 00:00). Pour fermer toute la journée : on="00:00", off="00:00".
-   - Les jours fériés belges sont fermés par défaut. Pour ouvrir un jour férié aux horaires habituels, appelle propose_whitelist. Pour des horaires particuliers personnalisés sur un jour ou une période, appelle propose_special_schedule.`,
+   - Les jours fériés belges sont fermés par défaut. Pour ouvrir un jour férié aux horaires habituels, appelle propose_whitelist. Pour des horaires particuliers personnalisés sur un jour ou une période, appelle propose_special_schedule.
+   - Si l'utilisateur demande d'actualiser, synchroniser ou rafraîchir les horaires ou l'affichage en direct sans recharger l'application, appelle 'refresh_schedule_data'.
+   - Si l'utilisateur demande explicitement un rafraîchissement forcé, un rechargement forcé, un hard reload, ou de vider le cache de l'application, appelle 'hard_reload_app'.`,
       },
     ],
   };
@@ -272,6 +290,12 @@ export function formatActionSummary(name, args = {}) {
       }
       return `Suppression des horaires exceptionnels du ${formatDateFr(start)} au ${formatDateFr(end)}`;
     }
+    case "refresh_schedule_data": {
+      return "Rafraîchissement des horaires en direct";
+    }
+    case "hard_reload_app": {
+      return "Rafraîchissement forcé et purge du cache de l'application";
+    }
     default:
       return `${name}: ${JSON.stringify(args)}`;
   }
@@ -335,6 +359,12 @@ export function parseGeminiResponse(apiResult) {
         break;
       case "propose_remove_special_schedule":
         reply = "Je vous propose de supprimer cet horaire exceptionnel. Veuillez confirmer ci-dessous :";
+        break;
+      case "refresh_schedule_data":
+        reply = "C'est fait ! Les horaires et le planning viennent d'être synchronisés et rafraîchis en direct ☕";
+        break;
+      case "hard_reload_app":
+        reply = "C'est parti ! Vidage complet des caches et rechargement forcé de La Station en cours... 🔄";
         break;
       default:
         reply = "Voici la proposition de mise à jour des horaires. Veuillez la confirmer ci-dessous :";

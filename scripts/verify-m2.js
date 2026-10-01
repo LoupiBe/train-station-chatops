@@ -600,19 +600,21 @@ runTest("formatDateFr and parseDateEuro format correctly", () => {
   assert.equal(parseDateEuro("14/05/2026"), "2026-05-14");
 });
 
-runTest("GEMINI_TOOLS declares exactly 6 functions with required properties", () => {
+runTest("GEMINI_TOOLS declares exactly 8 functions with required properties", () => {
   assert.equal(GEMINI_TOOLS.length, 1);
   const decls = GEMINI_TOOLS[0].functionDeclarations;
-  assert.equal(decls.length, 6);
+  assert.equal(decls.length, 8);
 
   const names = decls.map(d => d.name).sort();
   assert.deepEqual(names, [
+    "hard_reload_app",
     "propose_holiday",
     "propose_remove_holiday",
+    "propose_remove_special_schedule",
     "propose_schedule_change",
-    "propose_whitelist",
     "propose_special_schedule",
-    "propose_remove_special_schedule"
+    "propose_whitelist",
+    "refresh_schedule_data"
   ].sort());
 
   const holiday = decls.find(d => d.name === "propose_holiday");
@@ -627,6 +629,12 @@ runTest("GEMINI_TOOLS declares exactly 6 functions with required properties", ()
 
   const removeSpecial = decls.find(d => d.name === "propose_remove_special_schedule");
   assert.deepEqual(removeSpecial.parameters.required, ["start", "end"]);
+
+  const refreshData = decls.find(d => d.name === "refresh_schedule_data");
+  assert.ok(refreshData);
+
+  const hardReload = decls.find(d => d.name === "hard_reload_app");
+  assert.ok(hardReload);
 });
 
 runTest("buildSystemInstruction includes Brussels context and current schedule", () => {
@@ -692,7 +700,7 @@ runTest("parseGeminiResponse parses text-only and functionCall responses", () =>
   assert.match(r3.proposedAction.summary, /Ouverture exceptionnelle le 21\/07\/2026/);
 });
 
-runTest("formatActionSummary formats summaries for all 6 tools", () => {
+runTest("formatActionSummary formats summaries for all 8 tools", () => {
   assert.match(
     formatActionSummary("propose_holiday", { start: "2026-05-14", end: "2026-05-17", description: "Ascension" }),
     /Fermeture du 14\/05\/2026 au 17\/05\/2026/
@@ -716,6 +724,14 @@ runTest("formatActionSummary formats summaries for all 6 tools", () => {
   assert.match(
     formatActionSummary("propose_remove_special_schedule", { start: "2026-12-24", end: "2026-12-24" }),
     /Suppression de l'horaire exceptionnel le 24\/12\/2026/
+  );
+  assert.match(
+    formatActionSummary("refresh_schedule_data", {}),
+    /Rafraîchissement des horaires en direct/
+  );
+  assert.match(
+    formatActionSummary("hard_reload_app", {}),
+    /Rafraîchissement forcé et purge du cache de l'application/
   );
 });
 

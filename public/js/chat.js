@@ -3,6 +3,8 @@
  * Chat State Manager, Gemini API Communication, and Action Confirmation Workflow
  */
 
+import { hardPurgeAndReload } from "./sw-register.js";
+
 export const ERROR_MESSAGES = {
   offline: "Oups, pas de connexion Internet ! 📡 Vérifiez votre réseau pour papoter avec le bot et mettre à jour les horaires.",
   aiTimeout: "Le bot prend un petit café ☕ (ou le réseau fait une pause). Réessayez dans quelques instants !",
@@ -11,6 +13,60 @@ export const ERROR_MESSAGES = {
   appUpdate: "Une nouvelle version toute fraîche est prête ! 🚀 Cliquez pour recharger.",
   shaConflict: "⚠️ Le planning a été modifié entre-temps par un autre collaborateur. Les horaires viennent d'être rafraîchis. Veuillez revérifier les horaires actuels avant de renouveler votre demande.",
 };
+
+export const RELOAD_MESSAGES = {
+  hardReloadExecuting: "C'est parti ! Vidage complet des caches et rechargement forcé de La Station en cours... 🔄",
+  dataRefreshSuccess: "C'est fait ! Les horaires et le planning viennent d'être synchronisés et rafraîchis en direct ☕",
+  dataRefreshError: "Petit accroc technique lors de la synchronisation des horaires 📡 Veuillez vérifier votre connexion.",
+};
+
+/**
+ * Checks if user message requests a forced application reload or cache purge.
+ * Matches explicit French & English synonyms: "rafraîchissement forcé", "force le refresh",
+ * "hard reload", "vide le cache et recharge", "purger le cache", "mode forcé", etc.
+ * @param {string} text
+ * @returns {boolean}
+ */
+export function isForcedReloadRequest(text) {
+  if (!text || typeof text !== "string") return false;
+  const normalized = text
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim();
+
+  return (
+    /\b(forc(?:e|er|e|ee|ement)?\s+(?:le\s+)?(?:rafraich(?:issement|er)?|recharg(?:ement|er)?|refresh|reload))\b/.test(normalized) ||
+    /\b(?:rafraich(?:issement|er)?|recharg(?:ement|er)?|refresh|reload)\s+forc(?:e|ee)?\b/.test(normalized) ||
+    /\b(?:hard\s*reload|force\s*refresh|hard\s*refresh)\b/.test(normalized) ||
+    /\b(?:vid(?:e|er|ez)?|purg(?:e|er|ez)?|nettoy(?:e|er|ez)?|reinitialis(?:e|er|ez)?)\s+(?:le\s+)?cache\b/.test(normalized) ||
+    /\bcache\s+(?:vid(?:e|ee)?|purg(?:e|ee)?|nettoy(?:e|ee)?)\b/.test(normalized) ||
+    /\bmode\s+forc(?:e|ee)?\b/.test(normalized)
+  );
+}
+
+/**
+ * Checks if user message requests a live schedule/data refresh without full page reload.
+ * Matches synonyms: "rafraîchis les horaires", "synchronise le planning", "actualise les données", "mets à jour l'affichage", etc.
+ * @param {string} text
+ * @returns {boolean}
+ */
+export function isDataRefreshRequest(text) {
+  if (!text || typeof text !== "string") return false;
+  if (isForcedReloadRequest(text)) return false;
+
+  const normalized = text
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim();
+
+  return (
+    /\b(?:rafraich(?:ir|is|it|er|e)?|actualis(?:er|e)?|synchronis(?:er|e)?|sync|recharg(?:er|e)?)\s+(?:les?\s+|la\s+|l'|du\s+)?(?:horaires|planning|donnees|affichage)\b/.test(normalized) ||
+    /\b(?:mets?|mettre)\s+a\s+jour\s+(?:les?\s+|la\s+|l'|du\s+)?(?:horaires|planning|l'affichage|affichage|donnees)\b/.test(normalized) ||
+    /\b(?:verifi(?:er|e)?)\s+(?:les?\s+|le\s+)?(?:horaires|planning)\s+(?:en\s+direct|sur\s+github|a\s+jour)\b/.test(normalized)
+  );
+}
 
 let globalChatManager = null;
 
@@ -23,6 +79,7 @@ export class ChatManager {
    * @param {HTMLButtonElement} [options.chatSubmit]
    * @param {Function} [options.onScheduleUpdated]
    * @param {Function} [options.getScheduleSha]
+   * @param {Function} [options.onHardReload]
    */
   constructor(options = {}) {
     this.messagesContainer = options.messagesContainer || (typeof document !== 'undefined' ? document.getElementById("chat-messages") : null);
@@ -31,6 +88,7 @@ export class ChatManager {
     this.chatSubmit = options.chatSubmit || (typeof document !== 'undefined' ? document.getElementById("chat-submit") : null);
     this.onScheduleUpdated = options.onScheduleUpdated;
     this.getScheduleSha = options.getScheduleSha;
+    this.onHardReload = options.onHardReload || hardPurgeAndReload;
 
     this.history = []; // Sliding window of max 10 messages sent to Gemini
     this.currentSha = null;
@@ -61,13 +119,56 @@ export class ChatManager {
    * @param {string} messageText
    */
   async sendMessage(messageText) {
+    const trimmed = (messageText || "").trim();
+    if (!trimmed) return;
+
+    // Fast-path 1: Forced application reload & cache purge
+    if (isForcedReloadRequest(trimmed)) {
+      this.appendUserMessage(trimmed);
+      if (this.chatInput) this.chatInput.value = "";
+      this.appendBotMessage(RELOAD_MESSAGES.hardReloadExecuting);
+      this.scrollToBottom();
+      setTimeout(async () => {
+        if (typeof this.onHardReload === "function") {
+          await this.onHardReload();
+        }
+      }, 300);
+      return;
+    }
+
+    // Fast-path 2: Live data & schedule refresh (without full page reload)
+    if (isDataRefreshRequest(trimmed)) {
+      this.appendUserMessage(trimmed);
+      if (this.chatInput) this.chatInput.value = "";
+      this.setSubmittingState(true);
+      const typingIndicatorEl = this.showTypingIndicator();
+      this.scrollToBottom();
+      try {
+        if (typeof this.onScheduleUpdated === "function") {
+          await this.onScheduleUpdated();
+        }
+        if (typingIndicatorEl) typingIndicatorEl.remove();
+        this.appendBotMessage(RELOAD_MESSAGES.dataRefreshSuccess);
+        this.history.push({ role: "user", parts: [{ text: trimmed }] });
+        this.history.push({ role: "model", parts: [{ text: RELOAD_MESSAGES.dataRefreshSuccess }] });
+        if (this.history.length > 10) this.history = this.history.slice(-10);
+      } catch {
+        if (typingIndicatorEl) typingIndicatorEl.remove();
+        this.appendBotMessage(RELOAD_MESSAGES.dataRefreshError);
+      } finally {
+        this.setSubmittingState(false);
+        this.scrollToBottom();
+      }
+      return;
+    }
+
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       this.appendBotMessage(ERROR_MESSAGES.offline);
       return;
     }
 
     // 1. Render User Message
-    this.appendUserMessage(messageText);
+    this.appendUserMessage(trimmed);
     if (this.chatInput) this.chatInput.value = "";
     this.setSubmittingState(true);
 
@@ -80,7 +181,7 @@ export class ChatManager {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: messageText,
+          message: trimmed,
           history: this.history.slice(-10),
         }),
       });
@@ -97,7 +198,7 @@ export class ChatManager {
 
         const isTimeout = response.status === 504 || response.status === 502;
         const errMsg = errData.error || (isTimeout ? ERROR_MESSAGES.aiTimeout : ERROR_MESSAGES.aiTimeout);
-        this.appendBotErrorWithRetry(errMsg, messageText);
+        this.appendBotErrorWithRetry(errMsg, trimmed);
         return;
       }
 
@@ -108,8 +209,34 @@ export class ChatManager {
         this.currentSha = currentSha;
       }
 
+      // Check for hard reload action returned by Gemini
+      if (proposedAction && proposedAction.name === "hard_reload_app") {
+        const botReply = reply || RELOAD_MESSAGES.hardReloadExecuting;
+        this.appendBotMessage(botReply);
+        this.scrollToBottom();
+        setTimeout(async () => {
+          if (typeof this.onHardReload === "function") {
+            await this.onHardReload();
+          }
+        }, 300);
+        return;
+      }
+
+      // Check for data refresh action returned by Gemini
+      if (proposedAction && (proposedAction.name === "refresh_schedule_data" || proposedAction.name === "refresh_data")) {
+        if (typeof this.onScheduleUpdated === "function") {
+          await this.onScheduleUpdated().catch(() => {});
+        }
+        const botReply = reply || RELOAD_MESSAGES.dataRefreshSuccess;
+        this.appendBotMessage(botReply);
+        this.history.push({ role: "user", parts: [{ text: trimmed }] });
+        this.history.push({ role: "model", parts: [{ text: botReply }] });
+        if (this.history.length > 10) this.history = this.history.slice(-10);
+        return;
+      }
+
       // 3. Update Conversation History (sliding window)
-      this.history.push({ role: "user", parts: [{ text: messageText }] });
+      this.history.push({ role: "user", parts: [{ text: trimmed }] });
       this.history.push({ role: "model", parts: [{ text: reply }] });
       if (this.history.length > 10) {
         this.history = this.history.slice(-10);
@@ -120,7 +247,7 @@ export class ChatManager {
 
     } catch {
       if (typingIndicatorEl) typingIndicatorEl.remove();
-      this.appendBotErrorWithRetry(ERROR_MESSAGES.aiTimeout, messageText);
+      this.appendBotErrorWithRetry(ERROR_MESSAGES.aiTimeout, trimmed);
     } finally {
       this.setSubmittingState(false);
       this.scrollToBottom();
@@ -177,8 +304,14 @@ export class ChatManager {
     body.innerHTML = this.renderMarkdown(text);
     bubble.appendChild(body);
 
-    // If Gemini proposed an action, append interactive card
-    if (proposedAction && proposedAction.name) {
+    // If Gemini proposed an action, append interactive card (except for direct auto-actions)
+    if (
+      proposedAction &&
+      proposedAction.name &&
+      proposedAction.name !== "hard_reload_app" &&
+      proposedAction.name !== "refresh_schedule_data" &&
+      proposedAction.name !== "refresh_data"
+    ) {
       const card = this.createActionCard(proposedAction, actionSha || this.currentSha);
       bubble.appendChild(card);
     }
@@ -558,7 +691,7 @@ export class ChatManager {
     const online = typeof navigator !== 'undefined' ? navigator.onLine : true;
     if (this.chatInput) {
       this.chatInput.disabled = isSubmitting || !online;
-      if (!isSubmitting && online) {
+      if (!isSubmitting && online && typeof this.chatInput.focus === 'function') {
         this.chatInput.focus();
       }
     }

@@ -5,6 +5,20 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 
 ---
 
+## [0.3.0] - 2026-10-01
+
+### Ajouté
+- **Rafraîchissement forcé et purge du cache de l'application (`hardPurgeAndReload()`)** : purge complète de tous les caches `CacheStorage`, désenregistrement des Service Workers actifs, suppression des caches `localStorage` et `sessionStorage` pour un démarrage à froid intégral avec paramètre anti-cache `_t=timestamp`.
+- **Exécution directe par le bot ChatOps (sans sas de confirmation)** : prise en charge immédiate des requêtes de rafraîchissement forcé (*"rafraîchissement forcé"*, *"force le refresh"*, *"hard reload"*, *"vide le cache et recharge"*, *"mode forcé"*, etc.) avec confirmation textuelle chaleureuse et rechargement instantané.
+- **Rafraîchissement doux des données en direct** : synchronisation instantanée du planning et des horaires depuis `/api/status` (*"rafraîchis les horaires"*, *"synchronise le planning"*, *"actualise les données"*) sans aucun rechargement ni clignotement de la page et sans perte du contexte de conversation.
+- **Intégration Gemini NLU & Function Calling** : déclaration des outils `refresh_schedule_data` et `hard_reload_app` dans `GEMINI_TOOLS`, enrichissement du prompt système et des synthèses d'actions associées.
+- **Tests unitaires et d'intégration** : nouvelle suite de tests `tests/unit/forced-refresh-and-data-sync.test.js` validant les expressions régulières de synonymes, la purge des caches et le comportement du gestionnaire de chat.
+
+### Modifié
+- Bump de version mineure vers `v0.3.0` (`package.json`, `index.html`, `sw.js` avec cache `kiosk-chatops-v0.3.0`, `github.js`, `README.md`).
+
+---
+
 ## [0.2.6] - 2026-09-30
 
 ### Corrigé
