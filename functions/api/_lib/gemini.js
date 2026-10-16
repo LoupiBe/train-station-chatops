@@ -244,7 +244,7 @@ export function buildSystemInstruction(brusselsInfo, currentSchedule) {
   return {
     parts: [
       {
-        text: `Tu es l'assistant des horaires de "La Station", le café chaleureux et convivial situé à la gare de Genval (Belgique).
+        text: `Tu es l'assistant du kiosque de "La Station", le café chaleureux et convivial situé à la gare de Genval (Belgique).
 Attention essentielle : La Station est un café indépendant. Tu gères exclusivement les horaires d'ouverture, fermetures et congés du café "La Station", et NON les horaires des trains de la SNCB ni de la gare ferroviaire elle-même.
 Contexte temporel actuel : ${formattedInfo} (date ISO : ${isoDate}, fuseau Europe/Brussels).
 

@@ -5,6 +5,25 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 
 ---
 
+## [0.4.1] - 2026-10-16
+
+### Ajouté
+- **Gestion et publication d'affiches publicitaires & bandeaux kiosque (`ads`)** :
+  - Moteur client Canvas (`image-processor.js`) pour la génération de bandeaux WebP 1280×200.
+  - Presets 1-clic : `[Ajuster + Fond flouté]` (Cover centré sans étirement sur base sombre), `[Ajuster + Transparent]`, `[Remplir : Haut / Centre / Bas]`, et mode direct 1:1 pour les images déjà aux dimensions exactes.
+  - Génération textuelle en langage naturel avec ajustement dynamique de la taille de police (24px–72px), césure forcée et limitation à 140 caractères.
+  - Style typographique par défaut « Ambiance Café » avec police locale `Quicksand` (700 bold) mise en cache hors-ligne, et option « Panneau officiel ».
+  - Détection tolérante d'opacité relative ($\ge 98\%$ sur bande basse) pour le tag `F` (Fond opaque vs Fond transparent) avec préservation stricte du choix manuel de l'utilisateur.
+  - Importation d'images par bouton (`🖼️`), glisser-déposer sur le chat, et collage presse-papier (`Ctrl+V`).
+  - Validation backend et endpoints Cloudflare Pages pour la publication sur GitHub (`LoupiBe/train-station-timetable`) et la désactivation sécurisée sans suppression (`disabled-[nom]`).
+
+### Modifié
+- Évolution du rôle de l'assistant dans le message d'accueil : **Assistant du kiosque de La Station**.
+- Description explicite de l'icône photo (`🖼️`) pour l'ajout de bannières dans le message d'introduction.
+- Bump de version vers `v0.4.1` (`package.json`, `index.html`, `sw.js` avec cache `kiosk-chatops-v0.4.1`, `github.js`, `README.md`).
+
+---
+
 ## [0.3.0] - 2026-10-01
 
 ### Ajouté
