@@ -50,6 +50,58 @@ export function getGitHubHeaders(token) {
 }
 
 /**
+ * Parses GitHub API error responses, extracting status codes and descriptive error reasons.
+ * Differentiates 401 (Auth error), 403 (Rate limit, Branch protection, Forbidden), 404 (Not Found).
+ * @param {Response} response
+ * @param {string} [defaultMsg]
+ * @returns {Promise<Error>}
+ */
+export async function parseGitHubApiError(response, defaultMsg) {
+  const status = response.status;
+  const rawText = await response.text().catch(() => "");
+  let jsonMsg = "";
+  try {
+    const parsed = JSON.parse(rawText);
+    jsonMsg = parsed.message || "";
+  } catch {
+    jsonMsg = rawText;
+  }
+
+  let code = "GITHUB_ERROR";
+  let message = defaultMsg || `Erreur GitHub (${status}) : ${jsonMsg}`;
+
+  if (status === 401) {
+    code = "GITHUB_AUTH_ERROR";
+    message = "Authentification GitHub échouée : vérifiez la validité de GITHUB_TOKEN.";
+  } else if (status === 403) {
+    if (/rate\s*limit/i.test(jsonMsg || rawText)) {
+      code = "GITHUB_RATE_LIMIT";
+      message = "Limite de requêtes GitHub dépassée (rate limit). Veuillez patienter quelques instants avant de réessayer.";
+    } else if (/protected/i.test(jsonMsg || rawText)) {
+      code = "GITHUB_BRANCH_PROTECTED";
+      message = "Impossible d'écrire sur la branche : elle est protégée par des règles de révision ou d'organisation sur GitHub.";
+    } else {
+      code = "GITHUB_FORBIDDEN";
+      message = "Accès GitHub refusé : vérifiez les permissions d'écriture du token sur le dépôt.";
+    }
+  } else if (status === 404) {
+    code = "NOT_FOUND";
+    message = defaultMsg || "Dépôt, branche ou ressource GitHub introuvable.";
+  } else if (status === 409) {
+    if (/protected/i.test(jsonMsg || rawText)) {
+      code = "GITHUB_BRANCH_PROTECTED";
+      message = "Impossible d'écrire sur la branche : elle est protégée par des règles de protection sur GitHub.";
+    }
+  }
+
+  const err = new Error(message);
+  err.status = status;
+  err.code = code;
+  err.details = jsonMsg || rawText;
+  return err;
+}
+
+/**
  * Generates an informative French commit message for GitHub history.
  * @param {string} action
  * @param {object} payload
@@ -108,6 +160,14 @@ export function generateCommitMessage(action, payload, authorEmail) {
       } else {
         message = `Mise à jour des horaires : suppression horaire exceptionnel du ${start} au ${end}`;
       }
+      break;
+    }
+    case "upload_ad": {
+      message = `Mise en ligne de l'affiche : ${payload?.filename || "nouvelle affiche"}`;
+      break;
+    }
+    case "disable_ad": {
+      message = `Désactivation de l'affiche : ${payload?.filename || "affiche"}`;
       break;
     }
     default:
@@ -262,11 +322,7 @@ export async function commitScheduleToGitHub(env, scheduleOrOptions, originalSha
   }
 
   if (!response.ok) {
-    const errText = await response.text().catch(() => "");
-    const error = new Error(`Échec du commit GitHub (${response.status}) : ${errText}`);
-    error.status = response.status;
-    error.code = "GITHUB_ERROR";
-    throw error;
+    throw await parseGitHubApiError(response, `Échec du commit GitHub (${response.status})`);
   }
 
   const data = await response.json();
@@ -277,3 +333,263 @@ export async function commitScheduleToGitHub(env, scheduleOrOptions, originalSha
     data,
   };
 }
+
+/**
+ * Commits a new advertisement WebP banner to public/ads/[filename] via GitHub REST API.
+ * @param {object} env Cloudflare environment bindings
+ * @param {object} options
+ * @param {string} options.filename
+ * @param {string} options.contentBase64
+ * @param {string} [options.authorEmail]
+ * @returns {Promise<{ success: boolean, commitSha: string, fileSha: string, filename: string, data?: object }>}
+ */
+export async function uploadAdToGitHub(env, { filename, contentBase64, authorEmail }) {
+  const { GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO, GITHUB_BRANCH = "main" } = env || {};
+
+  if (!GITHUB_TOKEN || !GITHUB_OWNER || !GITHUB_REPO) {
+    const err = new Error("Configuration GitHub incomplète (GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO requis)");
+    err.code = "CONFIG_ERROR";
+    throw err;
+  }
+
+  const cleanContent = (contentBase64 || "")
+    .replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, "")
+    .replace(/\s+/g, "");
+  const commitMessage = generateCommitMessage("upload_ad", { filename }, authorEmail);
+  const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/public/ads/${encodeURIComponent(filename)}`;
+
+  // Check if file already exists on GitHub to obtain its SHA for updating
+  let existingSha = undefined;
+  try {
+    const checkRes = await fetch(url + `?ref=${encodeURIComponent(GITHUB_BRANCH)}`, {
+      method: "GET",
+      headers: getGitHubHeaders(GITHUB_TOKEN),
+    });
+    if (checkRes.ok) {
+      const checkData = await checkRes.json();
+      if (checkData?.sha) {
+        existingSha = checkData.sha;
+      }
+    }
+  } catch {
+    // ignore network check error
+  }
+
+  const body = {
+    message: commitMessage,
+    content: cleanContent,
+    branch: GITHUB_BRANCH,
+  };
+  if (existingSha) {
+    body.sha = existingSha;
+  }
+
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: {
+      ...getGitHubHeaders(GITHUB_TOKEN),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw await parseGitHubApiError(response, `Échec du téléversement GitHub (${response.status})`);
+  }
+
+  const data = await response.json();
+  return {
+    success: true,
+    commitSha: data.commit?.sha || "",
+    fileSha: data.content?.sha || "",
+    filename,
+    data,
+  };
+}
+
+/**
+ * Safely disables an existing ad banner by committing a new public/ads/disabled-[filename]
+ * and deleting the active public/ads/[filename] file via GitHub REST API.
+ * @param {object} env Cloudflare environment bindings
+ * @param {object} options
+ * @param {string} options.filename
+ * @param {string} [options.authorEmail]
+ * @returns {Promise<{ success: boolean, oldFilename: string, newFilename: string, commitSha?: string }>}
+ */
+export async function disableAdOnGitHub(env, { filename, authorEmail }) {
+  const { GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO, GITHUB_BRANCH = "main" } = env || {};
+
+  if (!GITHUB_TOKEN || !GITHUB_OWNER || !GITHUB_REPO) {
+    const err = new Error("Configuration GitHub incomplète (GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO requis)");
+    err.code = "CONFIG_ERROR";
+    throw err;
+  }
+
+  // 1. Fetch current file to retrieve its content and SHA
+  const getUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/public/ads/${encodeURIComponent(filename)}?ref=${encodeURIComponent(GITHUB_BRANCH)}`;
+  const getRes = await fetch(getUrl, {
+    method: "GET",
+    headers: getGitHubHeaders(GITHUB_TOKEN),
+  });
+
+  if (!getRes.ok) {
+    if (getRes.status === 404) {
+      const err = new Error(`L'affiche '${filename}' est introuvable sur le dépôt GitHub.`);
+      err.status = 404;
+      err.code = "NOT_FOUND";
+      throw err;
+    }
+    throw await parseGitHubApiError(getRes, `Erreur lors de la récupération de l'affiche (${getRes.status})`);
+  }
+
+  const existingFile = await getRes.json();
+  let fileContent = existingFile.content ? existingFile.content.replace(/\s+/g, "") : "";
+  if (!fileContent && existingFile.download_url) {
+    try {
+      const rawRes = await fetch(existingFile.download_url, {
+        headers: getGitHubHeaders(GITHUB_TOKEN),
+      });
+      if (rawRes.ok) {
+        const arrayBuf = await rawRes.arrayBuffer();
+        if (typeof Buffer !== "undefined") {
+          fileContent = Buffer.from(arrayBuf).toString("base64");
+        } else if (typeof btoa === "function") {
+          const bytes = new Uint8Array(arrayBuf);
+          let binary = "";
+          const len = bytes.byteLength;
+          for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          fileContent = btoa(binary);
+        }
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  if (!existingFile.sha || !fileContent) {
+    const err = new Error("Format de réponse GitHub contents invalide pour l'affiche existante");
+    err.code = "GITHUB_FORMAT_ERROR";
+    throw err;
+  }
+
+  const newFilename = `disabled-${filename}`;
+  const disabledUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/public/ads/${encodeURIComponent(newFilename)}`;
+  const disableMessage = generateCommitMessage("disable_ad", { filename }, authorEmail);
+
+  // Check if disabled file already exists to supply its sha if updating
+  let existingDisabledSha = undefined;
+  try {
+    const checkDisabled = await fetch(disabledUrl + `?ref=${encodeURIComponent(GITHUB_BRANCH)}`, {
+      method: "GET",
+      headers: getGitHubHeaders(GITHUB_TOKEN),
+    });
+    if (checkDisabled.ok) {
+      const disabledData = await checkDisabled.json();
+      if (disabledData?.sha) {
+        existingDisabledSha = disabledData.sha;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2. Commit the disabled file with identical content
+  const putBody = {
+    message: disableMessage,
+    content: fileContent,
+    branch: GITHUB_BRANCH,
+  };
+  if (existingDisabledSha) {
+    putBody.sha = existingDisabledSha;
+  }
+
+  const putRes = await fetch(disabledUrl, {
+    method: "PUT",
+    headers: {
+      ...getGitHubHeaders(GITHUB_TOKEN),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(putBody),
+  });
+
+  if (!putRes.ok) {
+    throw await parseGitHubApiError(putRes, `Échec de l'archivage de l'affiche désactivée (${putRes.status})`);
+  }
+
+  const putData = await putRes.json();
+
+  // 3. Delete the old active file
+  const deleteUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/public/ads/${encodeURIComponent(filename)}`;
+  const deleteRes = await fetch(deleteUrl, {
+    method: "DELETE",
+    headers: {
+      ...getGitHubHeaders(GITHUB_TOKEN),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message: `Suppression de l'affiche active (archivée sous ${newFilename})`,
+      sha: existingFile.sha,
+      branch: GITHUB_BRANCH,
+    }),
+  });
+
+  if (!deleteRes.ok) {
+    throw await parseGitHubApiError(deleteRes, `Échec de la suppression de l'ancienne affiche active (${deleteRes.status})`);
+  }
+
+  return {
+    success: true,
+    oldFilename: filename,
+    newFilename,
+    commitSha: putData.commit?.sha || "",
+  };
+}
+
+/**
+ * Lists all advertisement files from public/ads in GitHub repository.
+ * @param {object} env Cloudflare environment bindings
+ * @returns {Promise<Array<{ name: string, path: string, size: number, active: boolean, disabled: boolean, downloadUrl: string }>>}
+ */
+export async function listAdsFromGitHub(env) {
+  const { GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO, GITHUB_BRANCH = "main" } = env || {};
+
+  if (!GITHUB_TOKEN || !GITHUB_OWNER || !GITHUB_REPO) {
+    const err = new Error("Configuration GitHub incomplète (GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO requis)");
+    err.code = "CONFIG_ERROR";
+    throw err;
+  }
+
+  const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/public/ads?ref=${encodeURIComponent(GITHUB_BRANCH)}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: getGitHubHeaders(GITHUB_TOKEN),
+  });
+
+  if (res.status === 404) {
+    return [];
+  }
+
+  if (!res.ok) {
+    throw await parseGitHubApiError(res, `Échec de la récupération des affiches (${res.status})`);
+  }
+
+  const items = await res.json();
+  if (!Array.isArray(items)) return [];
+
+  return items
+    .filter((item) => item.type === "file")
+    .map((item) => {
+      const isDisabled = item.name.startsWith("disabled-") || item.name.startsWith("off-") || item.name.startsWith("_");
+      return {
+        name: item.name,
+        path: item.path,
+        size: item.size,
+        downloadUrl: item.download_url,
+        active: !isDisabled,
+        disabled: isDisabled,
+      };
+    });
+}
+

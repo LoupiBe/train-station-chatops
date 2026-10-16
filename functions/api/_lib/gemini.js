@@ -156,6 +156,77 @@ export const GEMINI_TOOLS = [
           properties: {},
         },
       },
+      {
+        name: "propose_generate_text_ad",
+        description: "Proposer la génération d'un bandeau d'annonce textuel pour le kiosque de la gare (Ambiance Café par défaut). Texte court limité à 140 caractères maximum.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            text: {
+              type: "STRING",
+              description: "Texte à afficher sur le bandeau (140 caractères maximum)",
+            },
+            style: {
+              type: "STRING",
+              description: "Style visuel du bandeau : 'cafe' (Ambiance Café ☕, par défaut) ou 'official' (Panneau officiel 🚂)",
+              enum: ["cafe", "official"],
+            },
+            duration: {
+              type: "INTEGER",
+              description: "Durée d'affichage en secondes sur le kiosque (défaut : 15)",
+            },
+            endDate: {
+              type: "STRING",
+              description: "Date d'expiration optionnelle au format YYYY-MM-DD",
+            },
+            slug: {
+              type: "STRING",
+              description: "Identifiant court (slug) pour le nom de fichier, en minuscules et tirets (ex: promo-croissant)",
+            },
+          },
+          required: ["text"],
+        },
+      },
+      {
+        name: "upload_ad",
+        description: "Publier une affiche ou un bandeau publicitaire pour le kiosque de la gare.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            filename: {
+              type: "STRING",
+              description: "Nom normalisé du fichier d'affiche (ex: 15-20261031-F-mon-affiche.webp)",
+            },
+            content: {
+              type: "STRING",
+              description: "Contenu de l'image au format Base64 (WebP)",
+            },
+          },
+          required: ["filename", "content"],
+        },
+      },
+      {
+        name: "disable_ad",
+        description: "Proposer de désactiver ou retirer une affiche publicitaire existante du kiosque de la gare.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            filename: {
+              type: "STRING",
+              description: "Nom exact du fichier d'affiche existant à désactiver (ex: 20-20261011-F-randotourix.jpg)",
+            },
+          },
+          required: ["filename"],
+        },
+      },
+      {
+        name: "list_ads",
+        description: "Consulter la liste des affiches et bandeaux publicitaires actuellement configurés sur le kiosque de la gare.",
+        parameters: {
+          type: "OBJECT",
+          properties: {},
+        },
+      },
     ],
   },
 ];
@@ -200,7 +271,11 @@ Personnalité & Périmètre de discussion :
    - Heures au format 24h HH:mm (ex: 06:50, 14:10, 00:00). Pour fermer toute la journée : on="00:00", off="00:00".
    - Les jours fériés belges sont fermés par défaut. Pour ouvrir un jour férié aux horaires habituels, appelle propose_whitelist. Pour des horaires particuliers personnalisés sur un jour ou une période, appelle propose_special_schedule.
    - Si l'utilisateur demande d'actualiser, synchroniser ou rafraîchir les horaires ou l'affichage en direct sans recharger l'application, appelle 'refresh_schedule_data'.
-   - Si l'utilisateur demande explicitement un rafraîchissement forcé, un rechargement forcé, un hard reload, ou de vider le cache de l'application, appelle 'hard_reload_app'.`,
+   - Si l'utilisateur demande explicitement un rafraîchissement forcé, un rechargement forcé, un hard reload, ou de vider le cache de l'application, appelle 'hard_reload_app'.
+6. Gestion des affiches et bandeaux d'information (ads) :
+   - Pour créer un bandeau d'annonce textuel (ex: "crée une affiche pour...", "fais un bandeau d'annonce..."), appelle 'propose_generate_text_ad' avec le texte (max 140 caractères). Le style par défaut est TOUJOURS "cafe" (Ambiance Café ☕). N'utilise "official" (Panneau officiel 🚂) que si expressément demandé. Suggère une durée (15s par défaut), une date de fin si mentionnée (format YYYY-MM-DD), et un slug pertinent en minuscules.
+   - Pour désactiver ou retirer une affiche existante du kiosque, appelle 'disable_ad' avec le nom de l'affiche (ex: '20-20261011-F-randotourix.jpg').
+   - Pour consulter ou lister les affiches, appelle 'list_ads'.`,
       },
     ],
   };
@@ -296,6 +371,20 @@ export function formatActionSummary(name, args = {}) {
     case "hard_reload_app": {
       return "Rafraîchissement forcé et purge du cache de l'application";
     }
+    case "propose_generate_text_ad": {
+      const styleLabel = args.style === "official" ? "Panneau officiel 🚂" : "Ambiance Café ☕";
+      const textPreview = args.text ? `"${args.text}"` : "Sans texte";
+      return `Génération de bandeau (${styleLabel}) : ${textPreview}`;
+    }
+    case "upload_ad": {
+      return `Mise en ligne de l'affiche : ${args.filename || "nouvelle affiche"}`;
+    }
+    case "disable_ad": {
+      return `Désactivation de l'affiche : ${args.filename || "affiche"}`;
+    }
+    case "list_ads": {
+      return "Consultation des affiches du kiosque";
+    }
     default:
       return `${name}: ${JSON.stringify(args)}`;
   }
@@ -365,6 +454,18 @@ export function parseGeminiResponse(apiResult) {
         break;
       case "hard_reload_app":
         reply = "C'est parti ! Vidage complet des caches et rechargement forcé de La Station en cours... 🔄";
+        break;
+      case "propose_generate_text_ad":
+        reply = "Voici une proposition de bandeau d'annonce pour le kiosque. Vous pouvez personnaliser le texte, le style et les métadonnées ci-dessous avant de publier :";
+        break;
+      case "upload_ad":
+        reply = "Voici l'affiche prête à être publiée sur le kiosque. Veuillez vérifier et confirmer ci-dessous :";
+        break;
+      case "disable_ad":
+        reply = "Je vous propose de désactiver cette affiche sur le kiosque. Veuillez vérifier et confirmer ci-dessous :";
+        break;
+      case "list_ads":
+        reply = "Voici les affiches actuellement configurées pour le kiosque :";
         break;
       default:
         reply = "Voici la proposition de mise à jour des horaires. Veuillez la confirmer ci-dessous :";

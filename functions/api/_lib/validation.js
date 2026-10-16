@@ -47,6 +47,69 @@ export function isValidTime(str) {
 }
 
 /**
+ * Validates the filename of a newly uploaded ad banner (strict lowercase and .webp).
+ * Pattern: [duration]-[date]-[F]-[slug].webp
+ * @param {string} filename 
+ * @returns {boolean}
+ */
+export function validateNewAdFilename(filename) {
+  if (!filename || typeof filename !== "string") return false;
+  const trimmed = filename.trim();
+  // Strict lowercase (no 'i' flag): requires lowercase slug and .webp extension
+  return /^\d+(?:-\d{8})?-(?:F-)?[a-z0-9-_]+\.webp$/.test(trimmed);
+}
+
+/**
+ * Validates the filename of an existing ad to disable (tolerant of historical formats,
+ * strictly rejects already disabled files and path traversal).
+ * @param {string} filename 
+ * @returns {boolean}
+ */
+export function validateExistingAdFilename(filename) {
+  if (!filename || typeof filename !== "string") return false;
+  const trimmed = filename.trim();
+  const lower = trimmed.toLowerCase();
+  // Strictly reject already disabled files to avoid disabled-disabled-...
+  if (lower.startsWith("disabled-") || lower.startsWith("off-") || lower.startsWith("_")) {
+    return false;
+  }
+  // Reject any path traversal attempts
+  if (trimmed.includes("/") || trimmed.includes("\\") || trimmed.includes("..")) {
+    return false;
+  }
+  // Tolerates .webp, .png, .jpg, .jpeg, case-insensitive, and historical tags (F or FULL)
+  return /^\d+(?:-\d{8})?-(?:F-|FULL-)?[a-zA-Z0-9-_\.]+\.(?:webp|png|jpe?g)$/i.test(trimmed);
+}
+
+/**
+ * Validates that a base64 string begins with the WebP/RIFF header.
+ * @param {string} b64 
+ * @returns {boolean}
+ */
+export function isWebPBase64(b64) {
+  if (typeof b64 !== "string") return false;
+  const clean = b64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, "").trim();
+  if (clean.length < 16) return false;
+  try {
+    const binary = typeof atob === "function"
+      ? atob(clean.slice(0, 16))
+      : Buffer.from(clean.slice(0, 16), "base64").toString("binary");
+    return (
+      binary.charCodeAt(0) === 0x52 && // R
+      binary.charCodeAt(1) === 0x49 && // I
+      binary.charCodeAt(2) === 0x46 && // F
+      binary.charCodeAt(3) === 0x46 && // F
+      binary.charCodeAt(8) === 0x57 && // W
+      binary.charCodeAt(9) === 0x45 && // E
+      binary.charCodeAt(10) === 0x42 && // B
+      binary.charCodeAt(11) === 0x50 // P
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Validates an action type and its associated payload before execution.
  * @param {string} action
  * @param {object} payload
@@ -162,6 +225,39 @@ export function validateAction(action, payload) {
         return {
           valid: false,
           error: `La date de début (${start}) doit être antérieure ou égale à la date de fin (${end})`,
+        };
+      }
+      return { valid: true };
+    }
+
+    case "upload_ad": {
+      const { filename, content } = payload;
+      if (!validateNewAdFilename(filename)) {
+        return {
+          valid: false,
+          error: "Nom de fichier d'affiche invalide. Format attendu : [durée]-[date]-[F]-[slug].webp en minuscules strictes.",
+        };
+      }
+      if (!content || typeof content !== "string") {
+        return { valid: false, error: "Le contenu Base64 de l'image est obligatoire." };
+      }
+      const cleanContent = content.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, "").trim();
+      const approxBytes = Math.floor((cleanContent.length * 3) / 4);
+      if (approxBytes > 1024 * 1024) {
+        return { valid: false, error: "Le fichier image dépasse la taille maximale autorisée (1 Mo)." };
+      }
+      if (!isWebPBase64(cleanContent)) {
+        return { valid: false, error: "Le contenu fourni n'est pas une image WebP valide (en-tête RIFF/WEBP manquant)." };
+      }
+      return { valid: true };
+    }
+
+    case "disable_ad": {
+      const { filename } = payload;
+      if (!validateExistingAdFilename(filename)) {
+        return {
+          valid: false,
+          error: "Nom d'affiche existante invalide ou fichier déjà désactivé.",
         };
       }
       return { valid: true };

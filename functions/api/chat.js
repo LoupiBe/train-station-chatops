@@ -7,7 +7,7 @@
  */
 
 import { getBrusselsDateTime } from "./_lib/brussels.js";
-import { fetchScheduleFromGitHub } from "./_lib/github.js";
+import { fetchScheduleFromGitHub, listAdsFromGitHub } from "./_lib/github.js";
 import { queryGemini } from "./_lib/gemini.js";
 import { jsonResponse, errorResponse, optionsResponse } from "./_lib/http.js";
 
@@ -63,6 +63,32 @@ export async function onRequestPost(context) {
       brusselsInfo,
       currentSchedule,
     });
+
+    // Handle read-only list_ads action immediately from GitHub
+    if (geminiResult.proposedAction?.name === "list_ads") {
+      try {
+        const ads = await listAdsFromGitHub(env);
+        if (!ads || ads.length === 0) {
+          geminiResult.reply = "Aucune affiche n'est actuellement configurée dans le dossier des affiches du kiosque.";
+        } else {
+          const activeAds = ads.filter((a) => a.active);
+          const disabledAds = ads.filter((a) => a.disabled);
+          let listText = "Voici les affiches actuellement configurées pour le kiosque de la gare :";
+          if (activeAds.length > 0) {
+            listText += "\n\n**Affiches actives :**\n" + activeAds.map((a) => `- 🖼️ \`${a.name}\``).join("\n");
+          } else {
+            listText += "\n\n*(Aucune affiche active)*";
+          }
+          if (disabledAds.length > 0) {
+            listText += "\n\n**Affiches désactivées / archivées :**\n" + disabledAds.map((a) => `- 📁 \`${a.name}\``).join("\n");
+          }
+          geminiResult.reply = listText;
+        }
+        geminiResult.proposedAction = null;
+      } catch {
+        // preserve original reply if listing fails
+      }
+    }
 
     return jsonResponse({
       reply: geminiResult.reply,

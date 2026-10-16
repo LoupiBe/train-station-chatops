@@ -4,6 +4,16 @@
  */
 
 import { hardPurgeAndReload } from "./sw-register.js";
+import {
+  createCanvas,
+  fitWithMargins,
+  cropFill,
+  isImageOpaque,
+  ensureFontLoaded,
+  sanitizeSlug,
+  buildAdFilename,
+  generateTextBanner,
+} from "./image-processor.js";
 
 export const ERROR_MESSAGES = {
   offline: "Oups, pas de connexion Internet ! 📡 Vérifiez votre réseau pour papoter avec le bot et mettre à jour les horaires.",
@@ -96,14 +106,156 @@ export class ChatManager {
   }
 
   init() {
-    if (!this.chatForm) return;
+    if (this.chatForm) {
+      this.chatForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const message = this.chatInput ? this.chatInput.value.trim() : "";
+        if (!message || this.isSubmitting) return;
+        this.sendMessage(message);
+      });
+    }
 
-    this.chatForm.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const message = this.chatInput ? this.chatInput.value.trim() : "";
-      if (!message || this.isSubmitting) return;
-      this.sendMessage(message);
-    });
+    // Wire Upload Button & Hidden File Input
+    const uploadBtn = typeof document !== "undefined" ? document.getElementById("btn-upload-ad") : null;
+    const fileInput = typeof document !== "undefined" ? document.getElementById("ad-file-input") : null;
+    if (uploadBtn && fileInput) {
+      uploadBtn.addEventListener("click", () => fileInput.click());
+      fileInput.addEventListener("change", (e) => {
+        const file = e.target.files?.[0];
+        if (file) {
+          this.handleImageFile(file);
+          e.target.value = "";
+        }
+      });
+    }
+
+    // Wire Drag and Drop
+    if (typeof document !== "undefined") {
+      document.addEventListener("dragover", (e) => {
+        if (e.dataTransfer?.types?.includes("Files")) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+        }
+      });
+
+      document.addEventListener("drop", (e) => {
+        if (e.dataTransfer?.files?.length) {
+          e.preventDefault();
+          const file = e.dataTransfer.files[0];
+          if (file) {
+            this.handleImageFile(file);
+          }
+        }
+      });
+
+      // Wire Clipboard Paste
+      document.addEventListener("paste", (e) => {
+        const items = e.clipboardData?.items;
+        if (items) {
+          for (let i = 0; i < items.length; i++) {
+            if (items[i].type?.startsWith("image/")) {
+              const file = items[i].getAsFile();
+              if (file) {
+                e.preventDefault();
+                this.handleImageFile(file);
+                break;
+              }
+            }
+          }
+        }
+      });
+    }
+  }
+
+  /**
+   * Processes an uploaded image File and renders an Interactive Action Card for it.
+   * @param {File|Blob} file 
+   */
+  handleImageFile(file) {
+    if (!file) return;
+
+    if (!file.type?.startsWith("image/")) {
+      const row = document.createElement("div");
+      row.className = "message-row message-bot";
+      const bubble = document.createElement("div");
+      bubble.className = "message-bubble";
+      bubble.innerHTML = `
+        <div class="message-header">
+          <span class="message-sender">Assistant La Station</span>
+          <time class="message-time">En direct</time>
+        </div>
+        <div class="message-body">
+          <p>⚠️ Le fichier sélectionné (<code>${this.escapeHtml(file.name || "fichier")}</code>) n'est pas une image valide. Veuillez sélectionner un fichier image (.webp, .png, .jpg).</p>
+        </div>
+      `;
+      row.innerHTML = `<div class="message-avatar" aria-hidden="true">🤖</div>`;
+      row.appendChild(bubble);
+      if (this.messagesContainer) {
+        this.messagesContainer.appendChild(row);
+        this.scrollToBottom();
+      }
+      return;
+    }
+
+    if (typeof FileReader === "undefined" || typeof Image === "undefined") return;
+
+    const renderError = (msg) => {
+      const row = document.createElement("div");
+      row.className = "message-row message-bot";
+      const bubble = document.createElement("div");
+      bubble.className = "message-bubble";
+      bubble.innerHTML = `
+        <div class="message-header">
+          <span class="message-sender">Assistant La Station</span>
+          <time class="message-time">En direct</time>
+        </div>
+        <div class="message-body">
+          <p>⚠️ ${this.escapeHtml(msg)}</p>
+        </div>
+      `;
+      row.innerHTML = `<div class="message-avatar" aria-hidden="true">🤖</div>`;
+      row.appendChild(bubble);
+      if (this.messagesContainer) {
+        this.messagesContainer.appendChild(row);
+        this.scrollToBottom();
+      }
+    };
+
+    const reader = new FileReader();
+    reader.onerror = () => {
+      renderError("Impossible de lire ce fichier image depuis votre appareil.");
+    };
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => {
+        renderError(`Impossible de décoder l'image '${file.name}'. Le fichier semble endommagé ou corrompu.`);
+      };
+      img.onload = () => {
+        const row = document.createElement("div");
+        row.className = "message-row message-bot";
+        const bubble = document.createElement("div");
+        bubble.className = "message-bubble";
+        bubble.innerHTML = `
+          <div class="message-header">
+            <span class="message-sender">Assistant La Station</span>
+            <time class="message-time">En direct</time>
+          </div>
+          <div class="message-body">
+            <p>Voici l'affiche que vous venez d'importer. Choisissez le mode de cadrage et vérifiez les métadonnées ci-dessous avant de publier sur le kiosque :</p>
+          </div>
+        `;
+        const card = this.createImageAdCard(img, file.name);
+        bubble.appendChild(card);
+        row.innerHTML = `<div class="message-avatar" aria-hidden="true">🤖</div>`;
+        row.appendChild(bubble);
+        if (this.messagesContainer) {
+          this.messagesContainer.appendChild(row);
+          this.scrollToBottom();
+        }
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
   }
 
   /**
@@ -310,10 +462,18 @@ export class ChatManager {
       proposedAction.name &&
       proposedAction.name !== "hard_reload_app" &&
       proposedAction.name !== "refresh_schedule_data" &&
-      proposedAction.name !== "refresh_data"
+      proposedAction.name !== "refresh_data" &&
+      proposedAction.name !== "list_ads"
     ) {
-      const card = this.createActionCard(proposedAction, actionSha || this.currentSha);
-      bubble.appendChild(card);
+      if (proposedAction.name === "propose_generate_text_ad") {
+        this.createTextAdCard(proposedAction, actionSha || this.currentSha).then((card) => {
+          bubble.appendChild(card);
+          this.scrollToBottom();
+        });
+      } else {
+        const card = this.createActionCard(proposedAction, actionSha || this.currentSha);
+        bubble.appendChild(card);
+      }
     }
 
     row.innerHTML = `<div class="message-avatar" aria-hidden="true">🤖</div>`;
@@ -367,6 +527,420 @@ export class ChatManager {
   }
 
   /**
+   * Creates an Interactive Action Card for an uploaded image banner.
+   * @param {HTMLImageElement|ImageBitmap} img 
+   * @param {string} [sourceName="affiche"] 
+   * @returns {HTMLElement}
+   */
+  createImageAdCard(img, sourceName = "affiche") {
+    const card = document.createElement("div");
+    card.className = "action-confirmation-card action-card confirmation-card action-card-image-ad";
+
+    const imgW = img.naturalWidth || img.width || 1280;
+    const imgH = img.naturalHeight || img.height || 200;
+    const isExact = imgW === 1280 && imgH === 200;
+
+    const canvas = createCanvas(1280, 200);
+    canvas.className = "ad-canvas-preview";
+
+    let initialMode = "fit-blur";
+    let initialOpaque = true;
+
+    // Sample the source image directly to determine whether it has transparent pixels
+    const sampleW = Math.min(imgW, 320);
+    const sampleH = Math.min(imgH, 200);
+    const sampleCanvas = createCanvas(sampleW, sampleH);
+    const sampleCtx = sampleCanvas.getContext ? sampleCanvas.getContext("2d") : null;
+    let isSourceOpaque = true;
+    if (sampleCtx) {
+      sampleCtx.drawImage(img, 0, 0, sampleW, sampleH);
+      isSourceOpaque = isImageOpaque(sampleCtx, sampleW, sampleH);
+    }
+
+    if (isExact) {
+      initialMode = "fill-center";
+      cropFill(img, "center", { canvas });
+      initialOpaque = isSourceOpaque;
+    } else if (isSourceOpaque) {
+      initialMode = "fit-blur";
+      fitWithMargins(img, { blurBackground: true, canvas });
+      initialOpaque = true;
+    } else {
+      initialMode = "fit-transparent";
+      fitWithMargins(img, { blurBackground: false, canvas });
+      initialOpaque = false;
+    }
+
+    const defaultSlug = sanitizeSlug(sourceName.replace(/\.[^/.]+$/, "")) || "affiche";
+
+    card.innerHTML = `
+      <div class="action-card-header">
+        <span aria-hidden="true">🖼️</span>
+        <span>Affiche Publicitaire (Upload)</span>
+      </div>
+      <div class="action-card-body">
+        <div class="ad-preview-wrapper"></div>
+
+        <div class="ad-preset-bar" role="group" aria-label="Mode de cadrage de l'image">
+          <span class="preset-group-title">Cadrage :</span>
+          <button type="button" class="btn-preset ${initialMode === 'fit-blur' ? 'active' : ''}" data-mode="fit-blur">Ajuster + Flou</button>
+          <button type="button" class="btn-preset ${initialMode === 'fit-transparent' ? 'active' : ''}" data-mode="fit-transparent">Ajuster + Transparent</button>
+          <div class="preset-fill-group">
+            <span class="preset-sublabel">Remplir :</span>
+            <button type="button" class="btn-preset ${initialMode === 'fill-top' ? 'active' : ''}" data-mode="fill-top">Haut</button>
+            <button type="button" class="btn-preset ${initialMode === 'fill-center' ? 'active' : ''}" data-mode="fill-center">Centre</button>
+            <button type="button" class="btn-preset ${initialMode === 'fill-bottom' ? 'active' : ''}" data-mode="fill-bottom">Bas</button>
+          </div>
+        </div>
+
+        <div class="ad-meta-grid">
+          <div class="ad-meta-field">
+            <label class="ad-meta-label">Durée (secondes)</label>
+            <input type="number" class="ad-meta-input ad-duration" value="15" min="1" max="120">
+          </div>
+          <div class="ad-meta-field">
+            <label class="ad-meta-label">Date d'expiration</label>
+            <input type="date" class="ad-meta-input ad-expiry">
+          </div>
+          <div class="ad-meta-field">
+            <label class="ad-meta-label">Identifiant (slug)</label>
+            <input type="text" class="ad-meta-input ad-slug" value="${this.escapeHtml(defaultSlug)}">
+          </div>
+        </div>
+
+        <div class="tag-checkbox-container">
+          <label class="tag-checkbox-label">
+            <input type="checkbox" class="tag-checkbox ad-tag-f" ${initialOpaque ? 'checked' : ''}>
+            <div>
+              <span class="tag-checkbox-title">Fond opaque (Tag F)</span>
+              <span class="tag-checkbox-desc">Cochez si le visuel a un fond opaque afin de relever les crédits du kiosque. Laissez décoché si le fond est transparent.</span>
+            </div>
+          </label>
+        </div>
+
+        <div class="ad-filename-preview-row">
+          <span class="ad-meta-label">Nom du fichier final :</span>
+          <span class="ad-filename-preview"></span>
+        </div>
+      </div>
+      <div class="action-card-footer">
+        <button type="button" class="btn-action-confirm btn-confirm">
+          <span class="btn-text">Publier sur GitHub 🚀</span>
+        </button>
+        <button type="button" class="btn-action-cancel btn-cancel">
+          <span class="btn-text">Annuler</span>
+        </button>
+      </div>
+    `;
+
+    const previewWrapper = card.querySelector(".ad-preview-wrapper");
+    previewWrapper.appendChild(canvas);
+
+    const presetBtns = card.querySelectorAll(".btn-preset");
+    const durationInput = card.querySelector(".ad-duration");
+    const expiryInput = card.querySelector(".ad-expiry");
+    const slugInput = card.querySelector(".ad-slug");
+    const tagFCheckbox = card.querySelector(".ad-tag-f");
+    const filenamePreview = card.querySelector(".ad-filename-preview");
+    const confirmBtn = card.querySelector(".btn-action-confirm");
+    const cancelBtn = card.querySelector(".btn-action-cancel");
+    const footer = card.querySelector(".action-card-footer");
+
+    const updateFilenamePreview = () => {
+      const dur = durationInput.value;
+      const expiry = expiryInput.value;
+      const isOpaque = tagFCheckbox.checked;
+      const slugVal = sanitizeSlug(slugInput.value) || "affiche";
+      const filename = buildAdFilename({
+        duration: dur,
+        expiryDate: expiry,
+        isOpaque,
+        slug: slugVal,
+      });
+      filenamePreview.textContent = filename;
+      return filename;
+    };
+
+    updateFilenamePreview();
+
+    slugInput.addEventListener("input", () => {
+      slugInput.value = sanitizeSlug(slugInput.value);
+      updateFilenamePreview();
+    });
+
+    durationInput.addEventListener("input", updateFilenamePreview);
+    expiryInput.addEventListener("input", updateFilenamePreview);
+    let isTagFUserModified = false;
+    tagFCheckbox.addEventListener("change", () => {
+      isTagFUserModified = true;
+      updateFilenamePreview();
+    });
+
+    presetBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        presetBtns.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        const mode = btn.dataset.mode;
+
+        if (mode === "fit-blur") {
+          fitWithMargins(img, { blurBackground: true, canvas });
+        } else if (mode === "fit-transparent") {
+          fitWithMargins(img, { blurBackground: false, canvas });
+        } else if (mode === "fill-top") {
+          cropFill(img, "top", { canvas });
+        } else if (mode === "fill-center") {
+          cropFill(img, "center", { canvas });
+        } else if (mode === "fill-bottom") {
+          cropFill(img, "bottom", { canvas });
+        }
+
+        // Recalculate Tag F state on preset click unless manually overridden by user
+        if (!isTagFUserModified) {
+          const isOpaque = isImageOpaque(canvas.getContext("2d"), 1280, 200);
+          tagFCheckbox.checked = isOpaque;
+        }
+        updateFilenamePreview();
+      });
+    });
+
+    confirmBtn.addEventListener("click", async () => {
+      // Preserves manual checkbox edit upon submission
+      const filename = updateFilenamePreview();
+      let contentBase64 = "";
+      if (typeof canvas.toDataURL === "function") {
+        const dataUrl = canvas.toDataURL("image/webp", 0.92);
+        contentBase64 = dataUrl.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, "").trim();
+      }
+      await this.executeConfirm(
+        card,
+        {
+          name: "upload_ad",
+          args: { filename, content: contentBase64 },
+          summary: `Mise en ligne de l'affiche : ${filename}`,
+        },
+        null,
+        footer
+      );
+    });
+
+    cancelBtn.addEventListener("click", () => {
+      footer.innerHTML = `
+        <div class="action-status-badge badge-canceled">
+          <span>❌ Téléversement annulé.</span>
+        </div>
+      `;
+    });
+
+    return card;
+  }
+
+  /**
+   * Creates an Interactive Action Card for a generated text banner.
+   * @param {object} action 
+   * @param {string|null} sha 
+   * @returns {Promise<HTMLElement>}
+   */
+  async createTextAdCard(action, sha) {
+    const card = document.createElement("div");
+    card.className = "action-confirmation-card action-card confirmation-card action-card-text-ad";
+
+    const initialArgs = action.args || {};
+    let currentStyle = initialArgs.style === "official" ? "official" : "cafe";
+    let currentBg = currentStyle === "cafe" ? "#2c1810" : "#1a365d";
+    let currentFg = currentStyle === "cafe" ? "#fef3c7" : "#ffffff";
+    const initialText = (initialArgs.text || "").slice(0, 140);
+    const defaultSlug = sanitizeSlug(initialArgs.slug || initialArgs.text?.slice(0, 20) || "annonce") || "annonce";
+
+    await ensureFontLoaded('700 48px "Quicksand"');
+
+    const canvas = createCanvas(1280, 200);
+    canvas.className = "ad-canvas-preview";
+
+    generateTextBanner({
+      text: initialText,
+      style: currentStyle,
+      bgColor: currentBg,
+      textColor: currentFg,
+      canvas,
+    });
+
+    card.innerHTML = `
+      <div class="action-card-header">
+        <span aria-hidden="true">🎨</span>
+        <span>Bandeau d'Annonce Textuel</span>
+      </div>
+      <div class="action-card-body">
+        <div class="ad-preview-wrapper"></div>
+
+        <div class="text-ad-controls">
+          <textarea class="text-ad-textarea" maxlength="140" placeholder="Texte de l'annonce (140 caractères max)...">${this.escapeHtml(initialText)}</textarea>
+          <div class="char-counter">${initialText.length} / 140</div>
+
+          <div class="ad-preset-bar" role="group" aria-label="Style typographique">
+            <span class="preset-group-title">Style :</span>
+            <button type="button" class="btn-style ${currentStyle === 'cafe' ? 'active' : ''}" data-style="cafe">Ambiance Café ☕</button>
+            <button type="button" class="btn-style ${currentStyle === 'official' ? 'active' : ''}" data-style="official">Panneau officiel 🚂</button>
+          </div>
+
+          <div class="color-controls-row">
+            <label class="color-control-item">
+              <span>Fond :</span>
+              <input type="color" class="ad-color-bg" value="${currentBg}">
+            </label>
+            <label class="color-control-item">
+              <span>Texte :</span>
+              <input type="color" class="ad-color-fg" value="${currentFg}">
+            </label>
+          </div>
+        </div>
+
+        <div class="ad-meta-grid">
+          <div class="ad-meta-field">
+            <label class="ad-meta-label">Durée (secondes)</label>
+            <input type="number" class="ad-meta-input ad-duration" value="${initialArgs.duration || 15}" min="1" max="120">
+          </div>
+          <div class="ad-meta-field">
+            <label class="ad-meta-label">Date d'expiration</label>
+            <input type="date" class="ad-meta-input ad-expiry" value="${this.escapeHtml(initialArgs.endDate || '')}">
+          </div>
+          <div class="ad-meta-field">
+            <label class="ad-meta-label">Identifiant (slug)</label>
+            <input type="text" class="ad-meta-input ad-slug" value="${this.escapeHtml(defaultSlug)}">
+          </div>
+        </div>
+
+        <div class="tag-checkbox-container">
+          <label class="tag-checkbox-label">
+            <input type="checkbox" class="tag-checkbox ad-tag-f" checked>
+            <div>
+              <span class="tag-checkbox-title">Fond opaque (Tag F)</span>
+              <span class="tag-checkbox-desc">Cochez si le bandeau a un fond opaque afin de relever les crédits du kiosque.</span>
+            </div>
+          </label>
+        </div>
+
+        <div class="ad-filename-preview-row">
+          <span class="ad-meta-label">Nom du fichier final :</span>
+          <span class="ad-filename-preview"></span>
+        </div>
+      </div>
+      <div class="action-card-footer">
+        <button type="button" class="btn-action-confirm btn-confirm">
+          <span class="btn-text">Publier sur GitHub 🚀</span>
+        </button>
+        <button type="button" class="btn-action-cancel btn-cancel">
+          <span class="btn-text">Annuler</span>
+        </button>
+      </div>
+    `;
+
+    const previewWrapper = card.querySelector(".ad-preview-wrapper");
+    previewWrapper.appendChild(canvas);
+
+    const textarea = card.querySelector(".text-ad-textarea");
+    const charCounter = card.querySelector(".char-counter");
+    const styleBtns = card.querySelectorAll(".btn-style");
+    const bgPicker = card.querySelector(".ad-color-bg");
+    const fgPicker = card.querySelector(".ad-color-fg");
+    const durationInput = card.querySelector(".ad-duration");
+    const expiryInput = card.querySelector(".ad-expiry");
+    const slugInput = card.querySelector(".ad-slug");
+    const tagFCheckbox = card.querySelector(".ad-tag-f");
+    const filenamePreview = card.querySelector(".ad-filename-preview");
+    const confirmBtn = card.querySelector(".btn-action-confirm");
+    const cancelBtn = card.querySelector(".btn-action-cancel");
+    const footer = card.querySelector(".action-card-footer");
+
+    const reRender = () => {
+      const text = textarea.value;
+      charCounter.textContent = `${text.length} / 140`;
+      generateTextBanner({
+        text,
+        style: currentStyle,
+        bgColor: bgPicker.value,
+        textColor: fgPicker.value,
+        canvas,
+      });
+      updateFilenamePreview();
+    };
+
+    const updateFilenamePreview = () => {
+      const dur = durationInput.value;
+      const expiry = expiryInput.value;
+      const isOpaque = tagFCheckbox.checked;
+      const slugVal = sanitizeSlug(slugInput.value) || "annonce";
+      const filename = buildAdFilename({
+        duration: dur,
+        expiryDate: expiry,
+        isOpaque,
+        slug: slugVal,
+      });
+      filenamePreview.textContent = filename;
+      return filename;
+    };
+
+    updateFilenamePreview();
+
+    textarea.addEventListener("input", reRender);
+    bgPicker.addEventListener("input", reRender);
+    fgPicker.addEventListener("input", reRender);
+    durationInput.addEventListener("input", updateFilenamePreview);
+    expiryInput.addEventListener("input", updateFilenamePreview);
+    tagFCheckbox.addEventListener("change", updateFilenamePreview);
+
+    slugInput.addEventListener("input", () => {
+      slugInput.value = sanitizeSlug(slugInput.value);
+      updateFilenamePreview();
+    });
+
+    styleBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        styleBtns.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        currentStyle = btn.dataset.style;
+        if (currentStyle === "cafe") {
+          bgPicker.value = "#2c1810";
+          fgPicker.value = "#fef3c7";
+        } else {
+          bgPicker.value = "#1a365d";
+          fgPicker.value = "#ffffff";
+        }
+        reRender();
+      });
+    });
+
+    confirmBtn.addEventListener("click", async () => {
+      // Preserves manual user checkbox edits
+      const filename = updateFilenamePreview();
+      let contentBase64 = "";
+      if (typeof canvas.toDataURL === "function") {
+        const dataUrl = canvas.toDataURL("image/webp", 0.92);
+        contentBase64 = dataUrl.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, "").trim();
+      }
+      await this.executeConfirm(
+        card,
+        {
+          name: "upload_ad",
+          args: { filename, content: contentBase64 },
+          summary: `Mise en ligne du bandeau : ${filename}`,
+        },
+        null,
+        footer
+      );
+    });
+
+    cancelBtn.addEventListener("click", () => {
+      footer.innerHTML = `
+        <div class="action-status-badge badge-canceled">
+          <span>❌ Génération annulée.</span>
+        </div>
+      `;
+    });
+
+    return card;
+  }
+
+  /**
    * Creates the Interactive Action Confirmation Card element.
    * @param {object} action
    * @param {string} sha
@@ -415,9 +989,13 @@ export class ChatManager {
     // Handle Cancel Click
     if (cancelBtn) {
       cancelBtn.addEventListener("click", () => {
+        const isAd = action.name === "upload_ad" || action.name === "disable_ad";
+        const cancelMsg = isAd
+          ? "❌ Action annulée (affiche inchangée)."
+          : "❌ Action annulée (planning inchangé).";
         footer.innerHTML = `
           <div class="action-status-badge badge-canceled">
-            <span>❌ Action annulée (planning inchangé).</span>
+            <span>${cancelMsg}</span>
           </div>
         `;
       });
@@ -483,26 +1061,36 @@ export class ChatManager {
       const targetSha = fetchedSha || this.currentSha || sha;
 
       try {
+        const isAdAction = action.name === "upload_ad" || action.name === "disable_ad";
+        const reqBody = {
+          action: action.name,
+          payload: action.args,
+        };
+        if (!isAdAction) {
+          reqBody.sha = targetSha;
+        }
+
         const res = await fetch("/api/confirm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: action.name,
-            payload: action.args,
-            sha: targetSha,
-          }),
+          body: JSON.stringify(reqBody),
         });
 
         const data = await res.json().catch(() => ({}));
 
         if (res.ok && data.success) {
           if (data.newFileSha) this.currentSha = data.newFileSha;
+          const successMsg = action.name === "upload_ad"
+            ? "✅ Affiche publiée avec succès sur GitHub ! 🌙 Prise en compte sur le kiosque physique."
+            : (action.name === "disable_ad"
+              ? "✅ Affiche désactivée avec succès sur GitHub."
+              : "✅ Modification enregistrée avec succès ! 🌙 Prise en compte sur le kiosque physique cette nuit.");
           footer.innerHTML = `
             <div class="action-status-badge badge-success">
-              <span>✅ Modification enregistrée avec succès ! 🌙 Prise en compte sur le kiosque physique cette nuit.</span>
+              <span>${successMsg}</span>
             </div>
           `;
-          if (this.onScheduleUpdated) {
+          if (this.onScheduleUpdated && !isAdAction) {
             try {
               this._pendingScheduleUpdate = Promise.resolve(this.onScheduleUpdated()).catch(() => null);
             } catch {
@@ -568,9 +1156,13 @@ export class ChatManager {
 
     if (closeBtn) {
       closeBtn.addEventListener("click", () => {
+        const isAd = action.name === "upload_ad" || action.name === "disable_ad";
+        const cancelMsg = isAd
+          ? "❌ Action non appliquée (affiche inchangée)."
+          : "❌ Action non appliquée. Le planning reste inchangé.";
         footer.innerHTML = `
           <div class="action-status-badge badge-canceled">
-            <span>❌ Action non appliquée. Le planning reste inchangé.</span>
+            <span>${cancelMsg}</span>
           </div>
         `;
       });
@@ -589,6 +1181,10 @@ export class ChatManager {
       case "propose_exceptional_schedule": return "Horaire Particulier Exceptionnel";
       case "propose_remove_special_schedule":
       case "propose_remove_exceptional_schedule": return "Suppression d'Horaire Exceptionnel";
+      case "upload_ad": return "Publication d'Affiche";
+      case "disable_ad": return "Désactivation d'Affiche";
+      case "propose_generate_text_ad": return "Bandeau d'Annonce Textuel";
+      case "list_ads": return "Affiches du Kiosque";
       default: return "Proposition d'Action";
     }
   }
@@ -648,6 +1244,25 @@ export class ChatManager {
         return isSingleDay
           ? `<div class="detail-row"><span class="detail-label">Date :</span><span class="detail-value">${this.escapeHtml(start)}</span></div>`
           : `<div class="detail-row"><span class="detail-label">Période :</span><span class="detail-value">Du ${this.escapeHtml(start)} au ${this.escapeHtml(end)}</span></div>`;
+      }
+      case "upload_ad": {
+        const fn = args.filename || "";
+        return `<div class="detail-row"><span class="detail-label">Fichier :</span><span class="detail-value"><code>${this.escapeHtml(fn)}</code></span></div>`;
+      }
+      case "disable_ad": {
+        const fn = args.filename || "";
+        return `<div class="detail-row"><span class="detail-label">Affiche :</span><span class="detail-value"><code>${this.escapeHtml(fn)}</code></span></div>`;
+      }
+      case "propose_generate_text_ad": {
+        const text = args.text || "";
+        const style = args.style === "official" ? "Panneau officiel 🚂" : "Ambiance Café ☕";
+        return `
+          <div class="detail-row"><span class="detail-label">Texte :</span><span class="detail-value">${this.escapeHtml(text)}</span></div>
+          <div class="detail-row"><span class="detail-label">Style :</span><span class="detail-value">${this.escapeHtml(style)}</span></div>
+        `;
+      }
+      case "list_ads": {
+        return `<div class="detail-row"><span class="detail-value">Consultation des affiches du kiosque</span></div>`;
       }
       default:
         return `<pre style="font-size: 11px;">${this.escapeHtml(JSON.stringify(args, null, 2))}</pre>`;

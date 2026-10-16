@@ -190,6 +190,10 @@
     <footer class="app-input-area" role="region" aria-label="Zone d'envoi de message">
       <form id="chat-form" class="chat-form" autocomplete="off">
         <div class="input-wrapper">
+          <button type="button" id="btn-upload-ad" class="btn-upload-ad" title="Importer une affiche (image)" aria-label="Importer une affiche">
+            <span aria-hidden="true">🖼️</span>
+          </button>
+          <input type="file" id="ad-file-input" accept="image/png,image/jpeg,image/webp" style="display:none;" aria-hidden="true">
           <input 
             type="text" 
             id="chat-input" 
