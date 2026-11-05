@@ -227,6 +227,20 @@ export const GEMINI_TOOLS = [
           properties: {},
         },
       },
+      {
+        name: "propose_toggle_screensaver",
+        description: "Proposer d'activer ou de désactiver à distance l'écran de veille anti-marquage (séance de gym LCD de 10 minutes après l'heure de fermeture) dans la configuration globale du kiosque.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            enabled: {
+              type: "BOOLEAN",
+              description: "true pour activer l'écran de veille après la fermeture, false pour le désactiver",
+            },
+          },
+          required: ["enabled"],
+        },
+      },
     ],
   },
 ];
@@ -275,7 +289,14 @@ Personnalité & Périmètre de discussion :
 6. Gestion des affiches et bandeaux d'information (ads) :
    - Pour créer un bandeau d'annonce textuel (ex: "crée une affiche pour...", "fais un bandeau d'annonce..."), appelle 'propose_generate_text_ad' avec le texte (max 140 caractères). Le style par défaut est TOUJOURS "cafe" (Ambiance Café ☕). N'utilise "official" (Panneau officiel 🚂) que si expressément demandé. Suggère une durée (15s par défaut), une date de fin si mentionnée (format YYYY-MM-DD), et un slug pertinent en minuscules.
    - Pour désactiver ou retirer une affiche existante du kiosque, appelle 'disable_ad' avec le nom de l'affiche (ex: '20-20261011-F-randotourix.jpg').
-   - Pour consulter ou lister les affiches, appelle 'list_ads'.`,
+   - Pour consulter ou lister les affiches, appelle 'list_ads'.
+7. Conseil et recommandation sur les horaires (multiples de 5 minutes) :
+   - Pour toute proposition d'horaire d'allumage ou d'extinction (on/off), il est vivement conseillé d'arrondir les horaires aux multiples de 5 minutes les plus proches (ex: 06:50, 14:10, 14:15) pour assurer une synchronisation matérielle optimale avec le planificateur d'écran du kiosque.
+   - Propose toujours d'office les horaires arrondis aux 5 minutes les plus proches dans ta réponse et dans l'appel d'outil.
+   - Si l'utilisateur confirme ou insiste explicitement pour une minute précise non arrondie (ex: 'garde 14:13'), respecte son choix sans le bloquer.
+8. Gestion à distance de l'écran de veille anti-marquage (LCD Gym) :
+   - L'écran effectue une séance de gymnastique dépolarisante de 10 minutes après l'heure de fermeture pour préserver la dalle.
+   - Si l'utilisateur demande d'activer ou de désactiver cet écran de veille (ou la gym de l'écran), appelle immédiatement l'outil 'propose_toggle_screensaver' avec enabled=true ou enabled=false.`,
       },
     ],
   };
@@ -385,6 +406,10 @@ export function formatActionSummary(name, args = {}) {
     case "list_ads": {
       return "Consultation des affiches du kiosque";
     }
+    case "propose_toggle_screensaver": {
+      const state = args.enabled ? "Activation" : "Désactivation";
+      return `${state} de l'écran de veille anti-marquage (post-fermeture)`;
+    }
     default:
       return `${name}: ${JSON.stringify(args)}`;
   }
@@ -466,6 +491,11 @@ export function parseGeminiResponse(apiResult) {
         break;
       case "list_ads":
         reply = "Voici les affiches actuellement configurées pour le kiosque :";
+        break;
+      case "propose_toggle_screensaver":
+        reply = proposedAction.args.enabled
+          ? "Je vous propose d'activer l'écran de veille anti-marquage après la fermeture. Veuillez vérifier et confirmer ci-dessous :"
+          : "Je vous propose de désactiver l'écran de veille anti-marquage après la fermeture. L'écran s'éteindra directement à l'heure de fermeture. Veuillez vérifier et confirmer ci-dessous :";
         break;
       default:
         reply = "Voici la proposition de mise à jour des horaires. Veuillez la confirmer ci-dessous :";

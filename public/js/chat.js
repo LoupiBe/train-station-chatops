@@ -1184,6 +1184,7 @@ export class ChatManager {
       case "upload_ad": return "Publication d'Affiche";
       case "disable_ad": return "Désactivation d'Affiche";
       case "propose_generate_text_ad": return "Bandeau d'Annonce Textuel";
+      case "propose_toggle_screensaver": return "Écran de Veille Anti-Marquage";
       case "list_ads": return "Affiches du Kiosque";
       default: return "Proposition d'Action";
     }
@@ -1263,6 +1264,14 @@ export class ChatManager {
       }
       case "list_ads": {
         return `<div class="detail-row"><span class="detail-value">Consultation des affiches du kiosque</span></div>`;
+      }
+      case "propose_toggle_screensaver": {
+        const state = args.enabled
+          ? "Activé (gym dépolarisante de 10 min après fermeture)"
+          : "Désactivé (extinction matérielle directe à la fermeture)";
+        return `
+          <div class="detail-row"><span class="detail-label">Action :</span><span class="detail-value"><strong>${state}</strong></span></div>
+        `;
       }
       default:
         return `<pre style="font-size: 11px;">${this.escapeHtml(JSON.stringify(args, null, 2))}</pre>`;

@@ -263,6 +263,14 @@ export function validateAction(action, payload) {
       return { valid: true };
     }
 
+    case "propose_toggle_screensaver": {
+      const { enabled } = payload;
+      if (typeof enabled !== "boolean") {
+        return { valid: false, error: "Le paramètre 'enabled' doit être un booléen (true ou false)" };
+      }
+      return { valid: true };
+    }
+
     default:
       return { valid: false, error: `Action non reconnue : ${action}` };
   }
@@ -379,6 +387,12 @@ export function applyScheduleAction(currentSchedule, action, payload) {
       });
       break;
     }
+
+    case "propose_toggle_screensaver": {
+      const { enabled } = payload || {};
+      updated.screensaver_enabled = Boolean(enabled);
+      break;
+    }
   }
 
   return updated;
@@ -448,6 +462,10 @@ export function validateScheduleStructure(schedule) {
         return { valid: false, error: `Horaires invalides pour horaire particulier : on=${item.on}, off=${item.off}` };
       }
     }
+  }
+
+  if (schedule.screensaver_enabled !== undefined && typeof schedule.screensaver_enabled !== "boolean") {
+    return { valid: false, error: "La propriété screensaver_enabled doit être un booléen" };
   }
 
   return { valid: true };

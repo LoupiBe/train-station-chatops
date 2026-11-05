@@ -170,6 +170,11 @@ export function generateCommitMessage(action, payload, authorEmail) {
       message = `Désactivation de l'affiche : ${payload?.filename || "affiche"}`;
       break;
     }
+    case "propose_toggle_screensaver": {
+      const state = payload?.enabled ? "activé" : "désactivé";
+      message = `Mise à jour de la configuration : écran de veille ${state}`;
+      break;
+    }
     default:
       message = `Mise à jour des horaires : ${action}`;
   }

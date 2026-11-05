@@ -1193,6 +1193,22 @@ export class ScheduleViewController {
         sourcePill.style.color = "var(--color-rail-navy)";
       }
     }
+
+    const screensaverBadge = document.getElementById("schedule-screensaver-badge");
+    if (screensaverBadge) {
+      const isEnabled = this.schedule?.screensaver_enabled !== false;
+      if (isEnabled) {
+        screensaverBadge.textContent = "🏋️ Gym LCD : Actif";
+        screensaverBadge.style.backgroundColor = "var(--color-rail-blue-subtle)";
+        screensaverBadge.style.color = "var(--color-rail-navy)";
+        screensaverBadge.title = "Écran de veille anti-marquage actif (10 min après fermeture)";
+      } else {
+        screensaverBadge.textContent = "⏸️ Gym LCD : Inactif";
+        screensaverBadge.style.backgroundColor = "var(--color-amber-bg)";
+        screensaverBadge.style.color = "var(--color-amber-text)";
+        screensaverBadge.title = "Écran de veille anti-marquage désactivé";
+      }
+    }
   }
 
   getExplicitScheduleYears() {
