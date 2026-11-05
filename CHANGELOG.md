@@ -5,6 +5,24 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 
 ---
 
+## [0.5.0] - 2026-11-05
+
+### Ajouté
+- **Bascule à distance de l'écran de veille anti-marquage (`screensaver`)** :
+  - Déclaration de l'outil Gemini `propose_toggle_screensaver` pour proposer d'activer ou désactiver à distance la gymnastique dépolarisante LCD de 10 minutes après l'heure de fermeture du kiosque.
+  - Carte d'action interactive de confirmation dans le chat (`public/js/chat.js`) et génération du message de commit GitHub associé.
+  - Badge d'état dans la barre de métadonnées du planning (`public/index.html` et `public/js/schedule-view.js` : `#schedule-screensaver-badge`) affichant l'état en direct (`🏋️ Gym LCD : Actif` ou `⏸️ Gym LCD : Inactif`).
+  - Validation backend de la propriété booléenne `screensaver_enabled` et mise à jour transparente dans le fichier `schedules.json` du kiosque.
+- **Conseil et recommandation d'arrondi des horaires aux 5 minutes** :
+  - Prompt système enrichi pour recommander et proposer d'office l'arrondi des horaires d'allumage et d'extinction aux multiples de 5 minutes les plus proches, garantissant une synchronisation matérielle optimale avec le planificateur d'écran du kiosque (tout en respectant le choix de l'utilisateur s'il insiste).
+- **Suite de tests unitaires** :
+  - Nouveaux tests complets dans `tests/unit/screensaver-toggle.test.js` couvrant l'analyse NLU, le formatage, la validation de structure, la mutation d'action et le rendu du badge DOM.
+
+### Modifié
+- Bump de version vers `v0.5.0` (`package.json`, `index.html`, `sw.js` avec cache `kiosk-chatops-v0.5.0`, `github.js`, `README.md`).
+
+---
+
 ## [0.4.1] - 2026-10-16
 
 ### Ajouté
