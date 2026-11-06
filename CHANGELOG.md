@@ -5,6 +5,17 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 
 ---
 
+## [0.5.1] - 2026-11-06
+
+### Corrigé
+- **Résilience d'authentification Cloudflare Zero Trust en mode PWA** :
+  - Stratégie de navigation (`request.mode === 'navigate'`) passée en **Network-First avec Fallback Cache** dans `sw.js`. Permet à Cloudflare d'intercepter la navigation pour présenter la mire de saisie du code PIN dès l'ouverture lorsque la session a expiré sur smartphone, tout en conservant le chargement hors-ligne transparent si le réseau est réellement coupé.
+  - Différenciation des erreurs réseau API : lorsqu'une requête échoue alors que l'appareil est connecté (`navigator.onLine === true`), retour d'un statut HTTP 401 explicite (`authExpired: true`) au lieu d'une erreur 503 trompeuse d'absence de connexion Internet.
+  - Détection proactive des faux négatifs `navigator.onLine` sur certains navigateurs mobiles au lancement PWA via une sonde HEAD résiliente.
+- Bump de version vers `v0.5.1` (`package.json`, `index.html`, `sw.js` avec cache `kiosk-chatops-v0.5.1`, `github.js`, `README.md`).
+
+---
+
 ## [0.5.0] - 2026-11-05
 
 ### Ajouté

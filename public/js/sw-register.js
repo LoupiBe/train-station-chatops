@@ -257,6 +257,17 @@ export function initConnectivityListeners(options = {}) {
   // Run initial state check
   const initialOnline = typeof navigator !== 'undefined' ? navigator.onLine !== false : true;
   updateUI(initialOnline);
+
+  // If initial check reported offline, execute a resilient probe to correct mobile PWA false negatives
+  if (!initialOnline && typeof fetch === 'function') {
+    fetch('/manifest.json', { method: 'HEAD', cache: 'no-store' })
+      .then((res) => {
+        if (res.ok || res.status === 302 || res.type === 'opaqueredirect') {
+          updateUI(true);
+        }
+      })
+      .catch(() => {});
+  }
 }
 
 /**

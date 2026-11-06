@@ -1,9 +1,9 @@
 /**
  * Service Worker: Assistant des horaires La Station
- * Cache version: kiosk-chatops-v0.5.0 (official logo)
+ * Cache version: kiosk-chatops-v0.5.1
  */
 
-const CACHE_NAME = 'kiosk-chatops-v0.5.0';
+const CACHE_NAME = 'kiosk-chatops-v0.5.1';
 
 const APP_SHELL = [
   '/',
@@ -77,6 +77,23 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname === '/api/chat' || url.pathname === '/api/confirm') {
     event.respondWith(
       fetch(request).catch(() => {
+        const isDeviceOnline = typeof self.navigator !== 'undefined' ? self.navigator.onLine !== false : false;
+        if (isDeviceOnline) {
+          return new Response(
+            JSON.stringify({
+              error: "Votre session Cloudflare Zero Trust a expiré. Veuillez recharger la page pour vous reconnecter avec votre code PIN.",
+              authExpired: true,
+              offline: false
+            }),
+            {
+              status: 401,
+              statusText: 'Unauthorized',
+              headers: {
+                'Content-Type': 'application/json; charset=utf-8'
+              }
+            }
+          );
+        }
         return new Response(
           JSON.stringify({
             error: OFFLINE_MESSAGE,
@@ -102,6 +119,24 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname === '/api/status') {
     event.respondWith(
       fetch(request).catch(() => {
+        const isDeviceOnline = typeof self.navigator !== 'undefined' ? self.navigator.onLine !== false : false;
+        if (isDeviceOnline) {
+          return new Response(
+            JSON.stringify({
+              error: "Votre session Cloudflare Zero Trust a expiré. Veuillez recharger la page pour vous reconnecter avec votre code PIN.",
+              authExpired: true,
+              offline: false,
+              schedule: null
+            }),
+            {
+              status: 401,
+              statusText: 'Unauthorized',
+              headers: {
+                'Content-Type': 'application/json; charset=utf-8'
+              }
+            }
+          );
+        }
         return new Response(
           JSON.stringify({
             error: OFFLINE_MESSAGE,
@@ -126,7 +161,31 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // D. Core App Shell & Static Assets: Cache-First with Network Fallback
+  // D. Page Navigation Requests (request.mode === 'navigate'): Network-First with Cache Fallback
+  // Crucial for Cloudflare Zero Trust authentication:
+  // When online, Cloudflare intercepts the navigation request and presents the login/PIN challenge screen
+  // if the session has expired. When genuinely offline, the browser catches the network error and
+  // seamlessly serves the cached App Shell (/index.html).
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200 && (networkResponse.type === 'basic' || networkResponse.type === 'default')) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put('/index.html', responseClone);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          return caches.match('/index.html');
+        })
+    );
+    return;
+  }
+
+  // E. Core App Shell Static Assets: Cache-First with Network Fallback
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       if (cachedResponse) {
@@ -141,12 +200,6 @@ self.addEventListener('fetch', (event) => {
             });
           }
           return networkResponse;
-        })
-        .catch(() => {
-          // Offline navigation fallback: serve index.html for SPA page loads
-          if (request.mode === 'navigate') {
-            return caches.match('/index.html');
-          }
         });
     })
   );
