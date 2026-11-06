@@ -19,6 +19,7 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
   - Nouveaux tests complets dans `tests/unit/screensaver-toggle.test.js` couvrant l'analyse NLU, le formatage, la validation de structure, la mutation d'action et le rendu du badge DOM.
 
 ### Modifié
+- Harmonisation visuelle de l'icône de l'application : remplacement de l'illustration générique par le logo officiel vectoriel de La Station Genval (`laStation-genval.svg`), régénération des déclinaisons PWA (`icon.svg`, `icon-192.png`, `icon-512.png`).
 - Bump de version vers `v0.5.0` (`package.json`, `index.html`, `sw.js` avec cache `kiosk-chatops-v0.5.0`, `github.js`, `README.md`).
 
 ---
